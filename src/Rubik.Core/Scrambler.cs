@@ -24,7 +24,8 @@ namespace Rubik.Core
                 do
                 {
                     axis = rng.Next(3);
-                    layer = rng.Next(size);
+                    // Крутимо тільки зовнішні грані (0 або size - 1)
+                    layer = rng.Next(2) == 0 ? 0 : size - 1;
                 } while (axis == lastAxis && layer == lastLayer);
 
                 moves.Add(new Move((Axis)axis, layer, rng.Next(1, 4)));

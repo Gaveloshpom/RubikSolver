@@ -1,6 +1,7 @@
-using System;
 using Rubik.Core;
 using Rubik.Solver3x3;
+using System;
+using System.Collections.Generic;
 
 namespace Rubik.Cli
 {
@@ -17,10 +18,10 @@ namespace Rubik.Cli
 
         private static int Main(string[] args)
         {
-            int n = 3, scrambleLength = 3, seed = Environment.TickCount;
+            int n = 3, scrambleLength = 5, seed = Environment.TickCount;
             string moves = null;
-            bool solve = false;
-            bool useMES = false;
+            bool solve = true;
+            bool useMES = true;
 
             try
             {
@@ -61,7 +62,24 @@ namespace Rubik.Cli
                         Console.Error.WriteLine("--solve currently only supports 3x3 cubes.");
                         return 1;
                     }
-                    var solution = LayerByLayerSolver.Solve(cube);
+
+                    // 1. Ініціалізуємо таблиці відсікання
+                    PruningTables.Initialize(new Cube(3));
+
+                    List<Move> solution = null;
+
+                    // 2. Спочатку намагаємося знайти ідеальне коротке рішення (з таблицями IDA* пробиває 12-14 ходів миттєво)
+                    Console.WriteLine("Searching for optimal solution...");
+                    solution = KociembaSolver.Solve(cube);
+
+                    // 3. Якщо скрамбл був занадто довгий (рішення не знайдено), падаємо на ваш LBL солвер
+                    if (solution == null)
+                    {
+                        Console.WriteLine("Cube is too scrambled for short search, falling back to Layer-by-Layer...");
+                        solution = LayerByLayerSolver.Solve(cube); // Ваш оригінальний метод
+                    }
+
+                    //var solution = LayerByLayerSolver.Solve(cube);
                     var check = cube.Clone();
                     check.Apply(solution);
                     Console.WriteLine();
