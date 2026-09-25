@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Rubik.Solver3x3.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Rubik.Core\Rubik.Core.csproj" />
+    <ProjectReference Include="..\..\src\Rubik.Solver3x3\Rubik.Solver3x3.csproj" />
+  </ItemGroup>
+
+</Project>

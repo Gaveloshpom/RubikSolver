@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.10.12217.157 stable
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{254E7862-33D8-4E3F-AD59-8D197CC5CED8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rubik.Core", "src\Rubik.Core\Rubik.Core.csproj", "{48A96ED3-A4DF-4A09-8812-3DC64B13BE7B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rubik.Cli", "src\Rubik.Cli\Rubik.Cli.csproj", "{F796A126-16B2-45A0-ABAB-364140FA5C41}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{EFC7AA7F-28E6-4A42-B171-09D31A57B66E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rubik.Tests", "tests\Rubik.Tests\Rubik.Tests.csproj", "{613E0E4E-0459-444F-9A70-5D9105D60FCC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rubik.Tests.Offline", "tests\Rubik.Tests.Offline\Rubik.Tests.Offline.csproj", "{E95D6672-3657-4C5D-BA76-91473EE9D6AF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rubik.Solver3x3.Tests", "tests\Rubik.Solver3x3.Tests\Rubik.Solver3x3.Tests.csproj", "{A360D4D5-A995-455E-AE86-EED70F901B69}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rubik.Solver3x3", "src\Rubik.Solver3x3\Rubik.Solver3x3.csproj", "{11408FF1-7538-EAB6-E001-E07F4C64F25C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{48A96ED3-A4DF-4A09-8812-3DC64B13BE7B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{48A96ED3-A4DF-4A09-8812-3DC64B13BE7B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{48A96ED3-A4DF-4A09-8812-3DC64B13BE7B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{48A96ED3-A4DF-4A09-8812-3DC64B13BE7B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F796A126-16B2-45A0-ABAB-364140FA5C41}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F796A126-16B2-45A0-ABAB-364140FA5C41}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F796A126-16B2-45A0-ABAB-364140FA5C41}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F796A126-16B2-45A0-ABAB-364140FA5C41}.Release|Any CPU.Build.0 = Release|Any CPU
+		{613E0E4E-0459-444F-9A70-5D9105D60FCC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{613E0E4E-0459-444F-9A70-5D9105D60FCC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{613E0E4E-0459-444F-9A70-5D9105D60FCC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{613E0E4E-0459-444F-9A70-5D9105D60FCC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E95D6672-3657-4C5D-BA76-91473EE9D6AF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E95D6672-3657-4C5D-BA76-91473EE9D6AF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E95D6672-3657-4C5D-BA76-91473EE9D6AF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E95D6672-3657-4C5D-BA76-91473EE9D6AF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A360D4D5-A995-455E-AE86-EED70F901B69}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A360D4D5-A995-455E-AE86-EED70F901B69}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A360D4D5-A995-455E-AE86-EED70F901B69}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A360D4D5-A995-455E-AE86-EED70F901B69}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11408FF1-7538-EAB6-E001-E07F4C64F25C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11408FF1-7538-EAB6-E001-E07F4C64F25C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11408FF1-7538-EAB6-E001-E07F4C64F25C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11408FF1-7538-EAB6-E001-E07F4C64F25C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{48A96ED3-A4DF-4A09-8812-3DC64B13BE7B} = {254E7862-33D8-4E3F-AD59-8D197CC5CED8}
+		{F796A126-16B2-45A0-ABAB-364140FA5C41} = {254E7862-33D8-4E3F-AD59-8D197CC5CED8}
+		{613E0E4E-0459-444F-9A70-5D9105D60FCC} = {EFC7AA7F-28E6-4A42-B171-09D31A57B66E}
+		{E95D6672-3657-4C5D-BA76-91473EE9D6AF} = {EFC7AA7F-28E6-4A42-B171-09D31A57B66E}
+		{A360D4D5-A995-455E-AE86-EED70F901B69} = {EFC7AA7F-28E6-4A42-B171-09D31A57B66E}
+		{11408FF1-7538-EAB6-E001-E07F4C64F25C} = {254E7862-33D8-4E3F-AD59-8D197CC5CED8}
+	EndGlobalSection
+EndGlobal

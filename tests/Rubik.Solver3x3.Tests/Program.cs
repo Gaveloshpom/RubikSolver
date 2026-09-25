@@ -1,0 +1,59 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using Rubik.Core;
+using Rubik.Solver3x3;
+
+// Mass-scramble regression test for LayerByLayerSolver. This is the same style of test that found
+// (and, after fixes, now catches regressions of) every bug described in the solver's development
+// notes: middle-slice scrambles that permute face centres, edges/corners stuck in the wrong slot,
+// pieces that are in the right slot but flipped, etc. A single hand-picked scramble is not a
+// meaningful test for a cube solver — only broad, varied coverage is.
+
+int failures = 0;
+int total = 0;
+var moveCounts = new List<int>();
+var sw = Stopwatch.StartNew();
+
+void Check(int size, int scrambleLength, int seed)
+{
+    total++;
+    var cube = new Cube(size);
+    cube.Apply(Scrambler.Generate(size, scrambleLength, seed));
+    var before = cube.Clone();
+    try
+    {
+        var solution = LayerByLayerSolver.Solve(cube);
+        var check = before.Clone();
+        check.Apply(solution);
+        if (!check.IsSolved)
+        {
+            failures++;
+            Console.WriteLine($"FAIL size={size} len={scrambleLength} seed={seed}: solver returned a sequence that does not solve the cube");
+        }
+        else
+        {
+            moveCounts.Add(solution.Count);
+        }
+    }
+    catch (Exception e)
+    {
+        failures++;
+        Console.WriteLine($"FAIL size={size} len={scrambleLength} seed={seed}: {e.GetType().Name}: {e.Message}");
+    }
+}
+
+// Scramble lengths from "already solved" up to long, each with many seeds — this is what actually
+// exercises rare cases (a piece landing exactly in its own slot but flipped, middle-slice moves
+// permuting centres, etc.) that a single example would almost never hit.
+foreach (var len in new[] { 0, 1, 2, 3, 5, 8, 15, 25, 50, 100 })
+    for (int seed = 0; seed < 100; seed++)
+        Check(3, len, seed * 97 + len);
+
+Console.WriteLine();
+Console.WriteLine($"Solved: {total - failures}/{total} in {sw.ElapsedMilliseconds} ms");
+if (moveCounts.Count > 0)
+    Console.WriteLine($"Solution length — min: {moveCounts.Min()}, avg: {moveCounts.Average():F1}, max: {moveCounts.Max()}");
+
+return failures == 0 ? 0 : 1;
