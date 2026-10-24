@@ -2,8 +2,8 @@ using Rubik.Core;
 using Rubik.Solver3x3;
 
 /// <summary>
-/// Стан режиму введення куба 3x3: 54 наліпки, де <see cref="Empty"/> = ще не заповнено.
-/// Центри зафіксовані: куб тримають білим центром угору і зеленим до себе.
+/// Edit-mode state for a 3x3 cube: 54 stickers, where <see cref="Empty"/> = not filled in yet.
+/// Centres are fixed: the cube is held with the white centre up and the green centre facing you.
 /// </summary>
 public class CubeEditor
 {
@@ -23,7 +23,7 @@ public class CubeEditor
             Stickers[i] = IsCenter(i) ? (byte)(i / 9) : Empty;
     }
 
-    /// <summary>Фарбує наліпку вибраним кольором. Повертає true, якщо щось змінилося.</summary>
+    /// <summary>Paints a sticker with the selected color. Returns true if anything changed.</summary>
     public bool Paint(int index)
     {
         if (IsCenter(index) || Stickers[index] == SelectedColor) return false;
@@ -35,24 +35,22 @@ public class CubeEditor
 
     public Cube ToCube() => Cube.FromStickers(3, Stickers);
 
-    private static readonly string[] ColorNames = { "білого", "червоного", "зеленого", "жовтого", "помаранчевого", "синього" };
-
-    public static string Describe(CubeValidation v)
+    /// <summary>Localization key and arguments describing a validation result.</summary>
+    public static (string key, object[] args) Describe(CubeValidation v)
     {
         switch (v.Error)
         {
-            case CubeValidationError.None: return "Куб коректний — натисни «Готово»";
-            case CubeValidationError.NotFilled: return $"Заповни всі наліпки (порожніх: {v.Detail})";
-            case CubeValidationError.WrongCount: return $"Наліпок {ColorNames[v.Detail]} кольору має бути 9, а зараз {v.Count}";
-            case CubeValidationError.WrongCenters: return "Центри не на своїх місцях";
-            case CubeValidationError.InvalidCorner: return "Є кут із кольорів, яких не буває разом";
-            case CubeValidationError.InvalidEdge: return "Є ребро з кольорів, яких не буває разом";
-            case CubeValidationError.DuplicateCorner: return "Два однакові кути";
-            case CubeValidationError.DuplicateEdge: return "Два однакові ребра";
-            case CubeValidationError.TwistedCorner: return "Один кут перекручений — такий куб не зібрати";
-            case CubeValidationError.FlippedEdge: return "Одне ребро перевернуте — такий куб не зібрати";
-            case CubeValidationError.Parity: return "Два елементи переставлені місцями — такий куб не зібрати";
-            default: return v.Error.ToString();
+            case CubeValidationError.None: return ("val.none", null);
+            case CubeValidationError.NotFilled: return ("val.notFilled", new object[] { v.Detail });
+            case CubeValidationError.WrongCount: return ("val.wrongCount", new object[] { Loc.T("color." + v.Detail), v.Count });
+            case CubeValidationError.WrongCenters: return ("val.wrongCenters", null);
+            case CubeValidationError.InvalidCorner: return ("val.invalidCorner", null);
+            case CubeValidationError.InvalidEdge: return ("val.invalidEdge", null);
+            case CubeValidationError.DuplicateCorner: return ("val.duplicateCorner", null);
+            case CubeValidationError.DuplicateEdge: return ("val.duplicateEdge", null);
+            case CubeValidationError.TwistedCorner: return ("val.twistedCorner", null);
+            case CubeValidationError.FlippedEdge: return ("val.flippedEdge", null);
+            default: return ("val.parity", null);
         }
     }
 }

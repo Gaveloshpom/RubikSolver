@@ -8,7 +8,7 @@ namespace Rubik.Solver3x3
     {
         public static readonly byte[] CornerOrientation = new byte[2187];
         public static readonly byte[] EdgeOrientation = new byte[2048];
-        public static readonly byte[] UDSlice = new byte[4096]; // Надійна бітмаска замість Choose
+        public static readonly byte[] UDSlice = new byte[4096]; // A reliable bit mask instead of Choose
         public static readonly byte[] CornerPermutation = new byte[40320];
         public static readonly byte[] EdgePermutation = new byte[40320];
 
@@ -31,19 +31,19 @@ namespace Rubik.Solver3x3
             for (int i = 0; i < p2Moves.Length; i++)
                 p2Moves[i] = Notation.Parse(p2Names[i], 3)[0];
 
-            // 1. Спочатку будуємо швидкі масиви переходів (Transition Tables)
+            // 1. First build the fast transition tables
             BuildTransitions(EdgeO_Move, GetEdgeOrientationCoordinate, 2048, solvedCube, p1Moves);
             BuildTransitions(UDSlice_Move, GetUDSliceCoordinate, 4096, solvedCube, p1Moves);
 
-            // 2. Будуємо велику об'єднану таблицю для Фази 1 (генерується за мілісекунди!)
+            // 2. Build the big combined table for phase 1 (generated in milliseconds)
             int startEo = GetEdgeOrientationCoordinate(solvedCube);
             int startUd = GetUDSliceCoordinate(solvedCube);
             BuildCombinedPhase1Table(p1Moves.Length, startEo, startUd);
 
-            // 3. Звичайні таблиці (EdgeOrientation та UDSlice більше не генеруємо окремо, вони є в P1_EdgeSlice)
+            // 3. Plain tables (EdgeOrientation and UDSlice are no longer built separately, they are part of P1_EdgeSlice)
             FillTable(CornerOrientation, GetCornerOrientationCoordinate, 2187, solvedCube, p1Moves);
 
-            // 4. Фаза 2
+            // 4. Phase 2
             FillTable(CornerPermutation, GetCornerPermutationCoordinate, 40320, solvedCube, p2Moves);
             FillTable(EdgePermutation, GetEdgePermutationCoordinate, 40320, solvedCube, p2Moves);
 
@@ -137,10 +137,10 @@ namespace Rubik.Solver3x3
 
                 if (c0 != uCenter && c0 != dCenter && c1 != uCenter && c1 != dCenter)
                 {
-                    mask |= (1 << i); // Записуємо 1 на позицію i
+                    mask |= (1 << i); // Set bit i
                 }
             }
-            return mask; // Повертає значення від 0 до 4095
+            return mask; // Returns a value from 0 to 4095
         }
 
         public static int GetCornerPermutationCoordinate(Cube c)
@@ -157,7 +157,7 @@ namespace Rubik.Solver3x3
                 byte c1 = c[facelets[1].face, facelets[1].row, facelets[1].col];
                 byte c2 = c[facelets[2].face, facelets[2].row, facelets[2].col];
 
-                // Використовуємо бітові маски кольорів для миттєвої ідентифікації кута без масивів
+                // Color bit masks identify the corner instantly without arrays
                 int mask = (1 << c0) | (1 << c1) | (1 << c2);
 
                 if (mask == ((1 << u) | (1 << r) | (1 << f))) perm[i] = 0;
@@ -191,14 +191,14 @@ namespace Rubik.Solver3x3
             Span<int> perm = stackalloc int[8];
             int idx = 0;
 
-            // Збираємо 8 ребер шарів U та D
+            // Collect the 8 edges of the U and D layers
             for (int i = 0; i < 12; i++)
             {
                 var facelets = PieceMap.EdgeFacelets[i];
                 byte c0 = c[facelets[0].face, facelets[0].row, facelets[0].col];
                 byte c1 = c[facelets[1].face, facelets[1].row, facelets[1].col];
 
-                // Якщо це ребро належить шару U або D
+                // If this edge belongs to the U or D layer
                 if (c0 == u || c0 == d || c1 == u || c1 == d)
                 {
                     int mask = (1 << c0) | (1 << c1);
@@ -213,7 +213,7 @@ namespace Rubik.Solver3x3
                     else if (mask == ((1 << d) | (1 << b))) perm[idx] = 7;
 
                     idx++;
-                    if (idx == 8) break; // Знайшли всі 8 ребер
+                    if (idx == 8) break; // Found all 8 edges
                 }
             }
 
@@ -232,7 +232,7 @@ namespace Rubik.Solver3x3
 
         private static void BuildTransitions(int[,] transTable, Func<Cube, int> getCoord, int maxStates, Cube solved, Move[] moves)
         {
-            // Ініціалізуємо всі переходи як "невідомі" (-1)
+            // Initialize every transition as "unknown" (-1)
             for (int i = 0; i < maxStates; i++)
                 for (int m = 0; m < moves.Length; m++)
                     transTable[i, m] = -1;
@@ -269,7 +269,7 @@ namespace Rubik.Solver3x3
 
         private static void BuildCombinedPhase1Table(int movesCount, int startEo, int startUd)
         {
-            // 2048 * 4096 = 8,388,608 байт (8 МБ). Заповнюємо значенням 255
+            // 2048 * 4096 = 8,388,608 bytes (8 MB). Fill with 255
             for (int i = 0; i < P1_EdgeSlice.Length; i++) P1_EdgeSlice[i] = 255;
 
             var q = new Queue<int>();
@@ -281,8 +281,8 @@ namespace Rubik.Solver3x3
             while (q.Count > 0)
             {
                 int curr = q.Dequeue();
-                int eo = curr / 4096; // Дістаємо координату орієнтації ребер
-                int ud = curr % 4096; // Дістаємо координату зрізу
+                int eo = curr / 4096; // Edge orientation coordinate
+                int ud = curr % 4096; // Slice coordinate
 
                 byte nextDepth = (byte)(P1_EdgeSlice[curr] + 1);
 
@@ -291,9 +291,9 @@ namespace Rubik.Solver3x3
                     int nextEo = EdgeO_Move[eo, i];
                     int nextUd = UDSlice_Move[ud, i];
 
-                    if (nextEo == -1 || nextUd == -1) continue; // Цей перехід не існує
+                    if (nextEo == -1 || nextUd == -1) continue; // This transition does not exist
 
-                    // Об'єднуємо дві координати в одну
+                    // Combine the two coordinates into one
                     int nextCombined = nextEo * 4096 + nextUd;
 
                     if (P1_EdgeSlice[nextCombined] == 255)

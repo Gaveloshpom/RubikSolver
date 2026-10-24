@@ -4,7 +4,7 @@ using UnityEditor.Build.Reporting;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 
-// Меню Rubik → Build Windows: налаштовує Player Settings і збирає Builds/Windows/RubikSolver.exe.
+// Menu Rubik → Build Windows: applies Player Settings and builds Builds/Windows/RubikSolver.exe.
 public static class RubikBuild
 {
     private const string ScenePath = "Assets/Scenes/Main.unity";
@@ -51,7 +51,7 @@ public static class RubikBuild
         PlayerSettings.resizableWindow = true;
         PlayerSettings.runInBackground = true;
 
-        // Згладжування країв наліпок (MSAA 4x) в усіх URP-асетах проєкту
+        // Smooth sticker edges (MSAA 4x) in every URP asset of the project
         foreach (var guid in AssetDatabase.FindAssets("t:UniversalRenderPipelineAsset"))
         {
             var asset = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(AssetDatabase.GUIDToAssetPath(guid));

@@ -3,7 +3,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-// Меню Rubik → Create Main Scene: створює Assets/Scenes/Main.unity з камерою, світлом і кубом.
+// Menu Rubik → Create Main Scene: creates Assets/Scenes/Main.unity with a camera, a light, the cube and the UI.
 public static class RubikSceneSetup
 {
     private const string ScenePath = "Assets/Scenes/Main.unity";

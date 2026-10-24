@@ -63,20 +63,20 @@ namespace Rubik.Cli
                         return 1;
                     }
 
-                    // 1. Ініціалізуємо таблиці відсікання
+                    // 1. Initialize the pruning tables
                     PruningTables.Initialize(new Cube(3));
 
                     List<Move> solution = null;
 
-                    // 2. Спочатку намагаємося знайти ідеальне коротке рішення (з таблицями IDA* пробиває 12-14 ходів миттєво)
+                    // 2. Try the two-phase search first (with the tables IDA* handles 12-14 moves instantly)
                     Console.WriteLine("Searching for optimal solution...");
                     solution = KociembaSolver.Solve(cube);
 
-                    // 3. Якщо скрамбл був занадто довгий (рішення не знайдено), падаємо на ваш LBL солвер
+                    // 3. If no solution was found, fall back to the layer-by-layer solver
                     if (solution == null)
                     {
                         Console.WriteLine("Cube is too scrambled for short search, falling back to Layer-by-Layer...");
-                        solution = LayerByLayerSolver.Solve(cube); // Ваш оригінальний метод
+                        solution = LayerByLayerSolver.Solve(cube); // the original method
                     }
 
                     //var solution = LayerByLayerSolver.Solve(cube);

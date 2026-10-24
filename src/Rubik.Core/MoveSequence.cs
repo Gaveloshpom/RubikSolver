@@ -4,7 +4,7 @@ namespace Rubik.Core
 {
     public static class MoveSequence
     {
-        /// <summary>Обернена послідовність: ходи в зворотному порядку, кожен інвертований.</summary>
+        /// <summary>Inverse sequence: moves in reverse order, each one inverted.</summary>
         public static List<Move> Invert(IReadOnlyList<Move> moves)
         {
             var result = new List<Move>(moves.Count);
@@ -14,8 +14,8 @@ namespace Rubik.Core
         }
 
         /// <summary>
-        /// Зливає сусідні ходи однієї осі й одного діапазону шарів (R R -> R2, R R' -> нічого)
-        /// і прибирає одиничні ходи. Каскадно: R U U' R' -> порожня послідовність.
+        /// Merges adjacent moves on the same axis and layer range (R R -> R2, R R' -> nothing)
+        /// and removes identity moves. Cascades: R U U' R' -> empty sequence.
         /// </summary>
         public static List<Move> Simplify(IEnumerable<Move> moves)
         {

@@ -6,14 +6,14 @@ namespace Rubik.Solver3x3
 {
     public static class OptimalShortSearch
     {
-        // Використовуємо всі можливі ходи зовнішніми гранями
+        // Use every outer face move
         private static readonly string[] AllMoves = ConstrainedSearch.AllMoves;
 
         public static List<Move> Solve(Cube start, int maxDepth = 7)
         {
             if (IsSolved(start)) return new List<Move>();
 
-            // Парсимо ходи один раз, щоб не витрачати ресурси всередині циклу
+            // Parse the moves once instead of inside the loop
             var parsedMoves = new Move[AllMoves.Length];
             for (int i = 0; i < AllMoves.Length; i++)
             {
@@ -23,7 +23,7 @@ namespace Rubik.Solver3x3
             var path = new List<Move>();
             var workCube = start.Clone();
 
-            // Поступово збільшуємо глибину (Iterative Deepening)
+            // Increase the depth step by step (iterative deepening)
             for (int depth = 1; depth <= maxDepth; depth++)
             {
                 if (Search(workCube, 0, depth, path, parsedMoves))
@@ -32,22 +32,22 @@ namespace Rubik.Solver3x3
                 }
             }
 
-            return null; // Рішення не знайдено в межах maxDepth
+            return null; // No solution within maxDepth
         }
 
         private static bool Search(Cube cube, int currentDepth, int maxDepth, List<Move> path, Move[] allMoves)
         {
-            // МАГІЯ ВІДСІКАННЯ (PRUNING) x2:
+            // Pruning with two tables:
             int coIndex = PruningTables.GetCornerOrientationCoordinate(cube);
             int eoIndex = PruningTables.GetEdgeOrientationCoordinate(cube);
 
-            // Беремо найбільшу необхідну кількість ходів з обох таблиць
+            // Take the larger required move count of the two tables
             int minMovesRequired = Math.Max(
                 PruningTables.CornerOrientation[coIndex],
                 PruningTables.EdgeOrientation[eoIndex]
             );
 
-            // Якщо нам не вистачає ліміту ходів, щоб вирішити хоча б орієнтацію - відкидаємо гілку
+            // If the remaining depth cannot even fix the orientation, cut the branch
             if (currentDepth + minMovesRequired > maxDepth)
             {
                 return false;
@@ -62,8 +62,8 @@ namespace Rubik.Solver3x3
             {
                 var move = allMoves[i];
 
-                // Відсікання зайвих гілок (Pruning):
-                // Не крутимо ту саму грань двічі поспіль (наприклад, R, а потім R2)
+                // Cut redundant branches:
+                // Never turn the same face twice in a row (e.g. R followed by R2)
                 if (path.Count > 0)
                 {
                     var last = path[path.Count - 1];
@@ -71,17 +71,17 @@ namespace Rubik.Solver3x3
                         continue;
                 }
 
-                // Застосовуємо хід (без клонування куба - економимо пам'ять і час)
+                // Apply the move in place (no cube cloning, saves memory and time)
                 cube.Apply(new[] { move });
                 path.Add(move);
 
-                // Заглиблюємось далі
+                // Go deeper
                 if (Search(cube, currentDepth + 1, maxDepth, path, allMoves))
                 {
                     return true;
                 }
 
-                // Відкат ходу (Backtracking): застосовуємо обернений рух
+                // Backtrack: apply the inverse move
                 path.RemoveAt(path.Count - 1);
                 var inverse = new Move(move.Axis, move.LayerFrom, move.LayerTo, 4 - move.Turns);
                 cube.Apply(new[] { inverse });
@@ -92,7 +92,7 @@ namespace Rubik.Solver3x3
 
         private static bool IsSolved(Cube c)
         {
-            // Перевіряємо, чи всі грані мають однорідний колір
+            // Check that every face has a single color
             foreach (Face f in Enum.GetValues(typeof(Face)))
             {
                 byte centerColor = c[f, 1, 1];
@@ -106,14 +106,14 @@ namespace Rubik.Solver3x3
         public static int GetCornerOrientationCoordinate(Cube c)
         {
             int coordinate = 0;
-            // Беремо перші 7 кутів. Ваш PieceMap містить 8 слотів[cite: 4].
-            // Для кожного слоту знаходимо його поточну орієнтацію (0, 1 або 2)
+            // Take the first 7 corners (PieceMap has 8 slots).
+            // For each slot find its current orientation (0, 1 or 2)
             for (int i = 0; i < 7; i++)
             {
                 CornerSlot slot = (CornerSlot)i;
                 var faces = PieceMap.CornerFacelets[i]; //[cite: 4]
 
-                // Знаходимо кут за базовими кольорами і дивимось на його PrimaryIndex[cite: 3]
+                // Find the corner by its home colors and look at its PrimaryIndex
                 byte a = c[faces[0].face, faces[0].row, faces[0].col];
                 byte b = c[faces[1].face, faces[1].row, faces[1].col];
                 byte d = c[faces[2].face, faces[2].row, faces[2].col];

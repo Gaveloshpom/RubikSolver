@@ -51,7 +51,7 @@ foreach (var len in new[] { 0, 1, 2, 3, 5, 8, 15, 25, 50, 100 })
     for (int seed = 0; seed < 100; seed++)
         Check(3, len, seed * 97 + len);
 
-// CubeValidator: будь-який скрамбл коректний, а поодинокі "фізично неможливі" зміни — ні.
+// CubeValidator: every scramble is valid, while single "physically impossible" changes are not.
 void ExpectValidation(string name, byte[] stickers, CubeValidationError expected)
 {
     total++;
@@ -71,15 +71,15 @@ for (int seed = 0; seed < 200; seed++)
     ExpectValidation($"scramble {seed}", s, CubeValidationError.None);
 
     var flipped = (byte[])s.Clone();
-    (flipped[7], flipped[19]) = (flipped[19], flipped[7]); // ребро UF
+    (flipped[7], flipped[19]) = (flipped[19], flipped[7]); // edge UF
     ExpectValidation($"flipped edge {seed}", flipped, CubeValidationError.FlippedEdge);
 
     var twisted = (byte[])s.Clone();
-    (twisted[8], twisted[9], twisted[20]) = (twisted[20], twisted[8], twisted[9]); // кут URF
+    (twisted[8], twisted[9], twisted[20]) = (twisted[20], twisted[8], twisted[9]); // corner URF
     ExpectValidation($"twisted corner {seed}", twisted, CubeValidationError.TwistedCorner);
 
     var swapped = (byte[])s.Clone();
-    (swapped[7], swapped[5]) = (swapped[5], swapped[7]);   // ребра UF <-> UR
+    (swapped[7], swapped[5]) = (swapped[5], swapped[7]);   // edges UF <-> UR
     (swapped[19], swapped[10]) = (swapped[10], swapped[19]);
     ExpectValidation($"swapped edges {seed}", swapped, CubeValidationError.Parity);
 }

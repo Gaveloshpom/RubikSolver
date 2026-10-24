@@ -6,10 +6,10 @@ namespace Rubik.Solver3x3
 {
     public static class KociembaSolver
     {
-        // Фаза 1 використовує всі можливі повороти зовнішніх граней
+        // Phase 1 uses every outer face turn
         private static readonly string[] Phase1MoveNames = ConstrainedSearch.AllMoves;
 
-        // Фаза 2 використовує обмежений набір (тільки подвійні повороти для R, L, F, B)
+        // Phase 2 uses a restricted set (only half turns for R, L, F, B)
         private static readonly string[] Phase2MoveNames = { "U", "U'", "U2", "D", "D'", "D2", "R2", "L2", "F2", "B2" };
 
         public static List<Move> Solve(Cube start)
@@ -23,10 +23,10 @@ namespace Rubik.Solver3x3
             var fullSolution = new List<Move>();
 
             // ==========================================
-            // ФАЗА 1: Приведення до підгрупи G1
+            // PHASE 1: reduce to the subgroup G1
             // ==========================================
             List<Move> phase1Solution = null;
-            // Обмежуємо глибину Фази 1 (зазвичай вистачає 10-12 ходів)
+            // Limit the phase 1 depth (10-12 moves are usually enough)
             for (int depth = 0; depth <= 12; depth++)
             {
                 var path = new List<Move>();
@@ -37,16 +37,16 @@ namespace Rubik.Solver3x3
                 }
             }
 
-            if (phase1Solution == null) return null; // Якщо надто заплутано для нашого простого ліміту
+            if (phase1Solution == null) return null; // Too scrambled for this simple limit
 
             //workCube.Apply(phase1Solution);
             fullSolution.AddRange(phase1Solution);
 
             // ==========================================
-            // ФАЗА 2: Повне вирішення з обмеженими ходами
+            // PHASE 2: solve completely with the restricted moves
             // ==========================================
             List<Move> phase2Solution = null;
-            // Обмежуємо глибину Фази 2 (зазвичай вистачає 12-18 ходів)
+            // Limit the phase 2 depth (12-18 moves are usually enough)
             for (int depth = 0; depth <= 18; depth++)
             {
                 var path = new List<Move>();
@@ -60,27 +60,27 @@ namespace Rubik.Solver3x3
             if (phase2Solution == null) return null;
 
             fullSolution.AddRange(phase2Solution);
-            return MoveOptimizer.Optimize(fullSolution); // Оптимізуємо стик між Фазою 1 і Фазою 2
+            return MoveOptimizer.Optimize(fullSolution); // Optimize the junction between phase 1 and phase 2
         }
 
         private static bool SearchPhase1(Cube cube, int currentDepth, int maxDepth, List<Move> path, Move[] moves)
         {
             int co = PruningTables.CornerOrientation[PruningTables.GetCornerOrientationCoordinate(cube)];
 
-            // Зчитуємо дві координати та об'єднуємо їх так само, як у таблиці
+            // Read the two coordinates and combine them the same way as the table does
             int eo = PruningTables.GetEdgeOrientationCoordinate(cube);
             int ud = PruningTables.GetUDSliceCoordinate(cube);
             int combinedCoordinate = eo * 4096 + ud;
 
             int p1_edgeSlice = PruningTables.P1_EdgeSlice[combinedCoordinate];
 
-            // Евристика: тепер ми беремо точну кількість ходів для ребер + зрізу ОДНОЧАСНО
+            // Heuristic: the exact move count for edges + slice TOGETHER
             int h = Math.Max(co, p1_edgeSlice);
 
             if (currentDepth + h > maxDepth) return false;
 
-            // Стан G1 досягнуто, коли всі 3 координати дорівнюють нулю 
-            // (в об'єднаній таблиці це значення 0, а co == 0)
+            // G1 is reached when all 3 coordinates are zero 
+            // (value 0 in the combined table and co == 0)
             if (h == 0 && currentDepth == maxDepth) return true;
 
             for (int i = 0; i < moves.Length; i++)
@@ -105,11 +105,11 @@ namespace Rubik.Solver3x3
 
         private static bool SearchPhase2(Cube cube, int currentDepth, int maxDepth, List<Move> path, Move[] moves)
         {
-            // У Фазі 2 ми використовуємо перестановку кутів (CP) ТА ребер (EP) для відсікання
+            // Phase 2 prunes with both corner permutation (CP) AND edge permutation (EP)
             int cp = PruningTables.CornerPermutation[PruningTables.GetCornerPermutationCoordinate(cube)];
             int ep = PruningTables.EdgePermutation[PruningTables.GetEdgePermutationCoordinate(cube)];
 
-            int h = Math.Max(cp, ep); // Беремо найгірший варіант з двох
+            int h = Math.Max(cp, ep); // Take the worse of the two
 
             if (currentDepth + h > maxDepth) return false;
 

@@ -6,24 +6,24 @@ namespace Rubik.Solver3x3
     {
         None,
         WrongLength,
-        NotFilled,      // є незаповнені наліпки (значення поза 0..5)
-        WrongCount,     // якогось кольору не 9 наліпок
-        WrongCenters,   // центри не U R F D L B на своїх місцях
-        InvalidCorner,  // кут із кольорів, яких не буває разом
+        NotFilled,      // some stickers are not filled in (value outside 0..5)
+        WrongCount,     // some color does not have 9 stickers
+        WrongCenters,   // the centres are not U R F D L B in place
+        InvalidCorner,  // a corner with colors that never meet
         InvalidEdge,
         DuplicateCorner,
         DuplicateEdge,
-        TwistedCorner,  // сума орієнтацій кутів не ділиться на 3
-        FlippedEdge,    // сума орієнтацій ребер непарна
-        Parity,         // парність перестановок кутів і ребер різна (два елементи переставлені)
+        TwistedCorner,  // corner orientation sum is not divisible by 3
+        FlippedEdge,    // edge orientation sum is odd
+        Parity,         // corner and edge permutation parities differ (two pieces swapped)
     }
 
     public readonly struct CubeValidation
     {
         public CubeValidationError Error { get; }
-        /// <summary>Для NotFilled — кількість порожніх; для WrongCount — колір.</summary>
+        /// <summary>For NotFilled: the number of empty stickers; for WrongCount: the color.</summary>
         public int Detail { get; }
-        /// <summary>Для WrongCount — скільки наліпок цього кольору.</summary>
+        /// <summary>For WrongCount: how many stickers of that color there are.</summary>
         public int Count { get; }
 
         public CubeValidation(CubeValidationError error, int detail = 0, int count = 0)
@@ -38,8 +38,8 @@ namespace Rubik.Solver3x3
     }
 
     /// <summary>
-    /// Перевірка, чи можна зібрати куб 3x3, заданий наліпками (як у Cube.Stickers, кольори 0..5 = U R F D L B).
-    /// Індекси збігаються з фацетами Kociemba (U1..U9, R1..R9, F, D, L, B), тож таблиці звідти.
+    /// Checks whether a 3x3 cube given by stickers (as in Cube.Stickers, colors 0..5 = U R F D L B) is solvable.
+    /// Indices match the Kociemba facelets (U1..U9, R1..R9, F, D, L, B), so the tables come from there.
     /// </summary>
     public static class CubeValidator
     {
@@ -88,7 +88,7 @@ namespace Rubik.Solver3x3
             for (int f = 0; f < 6; f++)
                 if (s[f * 9 + 4] != f) return new CubeValidation(CubeValidationError.WrongCenters);
 
-            // кути
+            // corners
             Span<int> cp = stackalloc int[8];
             int coSum = 0, usedCorners = 0;
             for (int i = 0; i < 8; i++)
@@ -109,7 +109,7 @@ namespace Rubik.Solver3x3
                 coSum += ori;
             }
 
-            // ребра
+            // edges
             Span<int> ep = stackalloc int[12];
             int eoSum = 0, usedEdges = 0;
             for (int i = 0; i < 12; i++)

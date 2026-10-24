@@ -1,7 +1,8 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-/// <summary>Камера, що обертається навколо куба: тягни мишею (ЛКМ або ПКМ), коліщатко — зум.</summary>
+/// <summary>Camera orbiting the cube: drag with the mouse (left or right button), wheel to zoom.</summary>
 public class OrbitCamera : MonoBehaviour
 {
     public Vector3 target = Vector3.zero;
@@ -12,8 +13,11 @@ public class OrbitCamera : MonoBehaviour
     public float pitch = 25f;
     public float rotateSpeed = 0.25f;
     public float zoomSpeed = 0.01f;
-    [Tooltip("Чим більше, тим швидше камера доганяє ціль")]
+    [Tooltip("Higher = the camera catches up with the target faster")]
     public float smoothing = 12f;
+
+    /// <summary>Returns true when a left drag starting at this screen point belongs to someone else (e.g. turning a layer).</summary>
+    public Func<Vector2, bool> capturesLeftDrag;
 
     private float _yaw, _pitch, _distance;
     private bool _dragging;
@@ -33,9 +37,11 @@ public class OrbitCamera : MonoBehaviour
         {
             var position = mouse.position.ReadValue();
 
-            // перетягування, що почалося над UI, камеру не крутить
-            if (mouse.leftButton.wasPressedThisFrame || mouse.rightButton.wasPressedThisFrame)
+            // a drag that starts over the UI (or is captured by the cube) does not orbit
+            if (mouse.rightButton.wasPressedThisFrame)
                 _dragging = !CubeUI.IsPointerOverUi(position);
+            else if (mouse.leftButton.wasPressedThisFrame)
+                _dragging = !CubeUI.IsPointerOverUi(position) && (capturesLeftDrag == null || !capturesLeftDrag(position));
             if (!mouse.leftButton.isPressed && !mouse.rightButton.isPressed)
                 _dragging = false;
 

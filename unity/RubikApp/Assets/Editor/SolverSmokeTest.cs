@@ -6,8 +6,8 @@ using Rubik.Solver3x3;
 using UnityEditor;
 using Debug = UnityEngine.Debug;
 
-// Перевірка, що солвер підключено: меню Rubik → Solver Smoke Test.
-// Пошук іде у фоновому потоці, щоб редактор не зависав.
+// Checks that the solver is wired up: menu Rubik → Solver Smoke Test.
+// The search runs on a background thread so the editor does not freeze.
 public static class SolverSmokeTest
 {
     [MenuItem("Rubik/Solver Smoke Test")]

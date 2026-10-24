@@ -3,28 +3,28 @@ using Rubik.Core;
 using UnityEngine;
 
 /// <summary>
-/// 3D-вигляд куба NxN. Джерело істини — <see cref="Model"/> (Rubik.Core.Cube):
-/// хід анімується поворотом групи кубиків, а після завершення модель застосовує хід,
-/// кубики повертаються на свої місця і наліпки перефарбовуються з моделі.
+/// 3D view of an NxN cube. The source of truth is <see cref="Model"/> (Rubik.Core.Cube):
+/// a move is animated by rotating a group of cubies; when it finishes, the model applies the move,
+/// the cubies snap back to their home transforms and the stickers are repainted from the model.
 ///
-/// Координати: модель праворука (x вправо, y вгору, z до глядача, F = +z),
-/// Unity ліворука, тому z інвертується. Хід моделі по осі X/Y/Z = +90° навколо
-/// Unity-векторів right / up / back.
+/// Coordinates: the model is right-handed (x right, y up, z towards the viewer, F = +z),
+/// Unity is left-handed, so z is flipped. A model move about X/Y/Z is +90° about the
+/// Unity vectors right / up / back.
 /// </summary>
 public class CubeView : MonoBehaviour
 {
-    // Кольори за номером грані розв'язаного куба: U R F D L B
+    // Colors by face index of the solved cube: U R F D L B
     public static readonly Color[] Palette =
     {
-        new Color(0.95f, 0.95f, 0.95f), // U білий
-        new Color(0.80f, 0.08f, 0.10f), // R червоний
-        new Color(0.05f, 0.62f, 0.25f), // F зелений
-        new Color(1.00f, 0.84f, 0.00f), // D жовтий
-        new Color(1.00f, 0.45f, 0.00f), // L помаранчевий
-        new Color(0.05f, 0.30f, 0.80f), // B синій
+        new Color(0.95f, 0.95f, 0.95f), // U white
+        new Color(0.80f, 0.08f, 0.10f), // R red
+        new Color(0.05f, 0.62f, 0.25f), // F green
+        new Color(1.00f, 0.84f, 0.00f), // D yellow
+        new Color(1.00f, 0.45f, 0.00f), // L orange
+        new Color(0.05f, 0.30f, 0.80f), // B blue
     };
 
-    /// <summary>Колір незаповненої наліпки в режимі введення.</summary>
+    /// <summary>Color of a sticker that is not filled in yet (edit mode).</summary>
     public static readonly Color EmptyColor = new Color(0.32f, 0.33f, 0.36f);
 
     public static Color ColorOf(byte color) => color < Palette.Length ? Palette[color] : EmptyColor;
@@ -33,7 +33,7 @@ public class CubeView : MonoBehaviour
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
     [Range(1, 10)] public int size = 3;
-    [Tooltip("Секунд на чверть оберту")]
+    [Tooltip("Seconds per quarter turn")]
     [Range(0.03f, 1f)] public float secondsPerTurn = 0.25f;
     public Material stickerMaterial;
     public Material bodyMaterial;
@@ -41,19 +41,21 @@ public class CubeView : MonoBehaviour
     private class Cubie
     {
         public Transform Transform;
-        public Vector3Int Home; // подвоєні координати моделі центру кубика
+        public Vector3Int Home; // doubled model coordinates of the cubie centre
     }
 
     private struct Sticker
     {
         public Renderer Renderer;
-        public int Index; // індекс у Cube.Stickers
+        public int Index;        // index in Cube.Stickers
+        public Vector3Int Home;  // home of the cubie it sits on
+        public Vector3 Normal;   // outward face normal, cube-local Unity space
     }
 
     private readonly List<Cubie> _cubies = new List<Cubie>();
     private readonly List<Sticker> _stickers = new List<Sticker>();
-    private readonly Dictionary<Collider, int> _stickerByCollider = new Dictionary<Collider, int>();
-    private byte[] _override; // якщо не null, показуємо ці наліпки замість моделі (режим введення)
+    private readonly Dictionary<Collider, Sticker> _stickerByCollider = new Dictionary<Collider, Sticker>();
+    private byte[] _override; // when not null, these stickers are shown instead of the model (edit mode)
     private readonly Queue<Move> _queue = new Queue<Move>();
     private readonly List<Cubie> _turning = new List<Cubie>();
     private MaterialPropertyBlock _block;
@@ -65,13 +67,13 @@ public class CubeView : MonoBehaviour
 
     public Cube Model { get; private set; }
 
-    /// <summary>Йде анімація або в черзі є ходи.</summary>
+    /// <summary>An animation is running or moves are queued.</summary>
     public bool IsBusy => _animating || _queue.Count > 0;
 
-    /// <summary>Скільки ходів ще не завершено (включно з поточним).</summary>
+    /// <summary>Number of unfinished moves (including the current one).</summary>
     public int Pending => _queue.Count + (_animating ? 1 : 0);
 
-    /// <summary>Викликається після кожного перефарбування (хід завершено, новий стан, режим введення).</summary>
+    /// <summary>Raised after every repaint (move finished, new state, edit mode).</summary>
     public event System.Action Repainted;
 
     private void Awake()
@@ -80,7 +82,7 @@ public class CubeView : MonoBehaviour
         Build(size);
     }
 
-    // ---------------------------------------------------------------- публічне API
+    // ---------------------------------------------------------------- public API
 
     public void Enqueue(Move move)
     {
@@ -92,7 +94,7 @@ public class CubeView : MonoBehaviour
         foreach (var m in moves) Enqueue(m);
     }
 
-    /// <summary>Зупиняє анімацію і ставить заданий стан (копію).</summary>
+    /// <summary>Stops the animation and shows the given state (copied).</summary>
     public void SetState(Cube cube)
     {
         if (cube.Size != size) Build(cube.Size);
@@ -103,29 +105,77 @@ public class CubeView : MonoBehaviour
         Repaint();
     }
 
-    /// <summary>Показує задані наліпки (значення поза 0..5 = порожня) замість моделі. Масив не копіюється.</summary>
+    /// <summary>Shows the given stickers (values outside 0..5 = empty) instead of the model. The array is not copied.</summary>
     public void ShowStickers(byte[] stickers)
     {
         _override = stickers;
         Repaint();
     }
 
-    /// <summary>Повертає показ стану моделі.</summary>
+    /// <summary>Goes back to showing the model state.</summary>
     public void ShowModel()
     {
         _override = null;
         Repaint();
     }
 
-    /// <summary>Колір наліпки, яку зараз видно (з моделі або з режиму введення).</summary>
+    /// <summary>Color of the sticker as currently shown (model or edit mode).</summary>
     public byte DisplayedColor(int index) => _override != null ? _override[index] : Model.Stickers[index];
 
-    public bool TryGetStickerIndex(Collider collider, out int index) =>
-        _stickerByCollider.TryGetValue(collider, out index);
+    public bool TryGetStickerIndex(Collider collider, out int index)
+    {
+        bool found = _stickerByCollider.TryGetValue(collider, out var sticker);
+        index = sticker.Index;
+        return found;
+    }
+
+    /// <summary>
+    /// Converts a mouse drag that started on a sticker into a layer move: the drag picks one of the
+    /// two directions lying in the sticker's face, and the layer turns so the sticker follows the mouse.
+    /// Uses the rest pose of the cube, so it also works while an animation is running.
+    /// </summary>
+    public bool TryGetDragMove(Collider collider, Vector2 screenDelta, Camera cam, out Move move)
+    {
+        move = default;
+        if (!_stickerByCollider.TryGetValue(collider, out var s) || screenDelta.sqrMagnitude < 1e-4f) return false;
+
+        var normal = s.Normal;
+        var center = ToUnity(s.Home) + normal * 0.5f;
+        Vector2 screenCenter = cam.WorldToScreenPoint(transform.TransformPoint(center));
+        var drag = screenDelta.normalized;
+
+        float best = 0f;
+        var direction = Vector3.zero;
+        foreach (var axis in AxisVectors)
+        {
+            if (Mathf.Abs(Vector3.Dot(axis, normal)) > 0.5f) continue; // not in the face plane
+            Vector2 onScreen = (Vector2)cam.WorldToScreenPoint(transform.TransformPoint(center + axis * 0.5f)) - screenCenter;
+            if (onScreen.sqrMagnitude < 1e-4f) continue;
+            float d = Vector2.Dot(drag, onScreen.normalized);
+            if (Mathf.Abs(d) > Mathf.Abs(best))
+            {
+                best = d;
+                direction = axis * Mathf.Sign(d);
+            }
+        }
+        if (best == 0f) return false;
+
+        // The layer turns about the axis perpendicular to both the face normal and the drag
+        var turnAxis = Vector3.Cross(normal, direction);
+        int axisIndex = 0;
+        for (int i = 1; i < 3; i++)
+            if (Mathf.Abs(turnAxis[i]) > Mathf.Abs(turnAxis[axisIndex])) axisIndex = i;
+
+        int layer = (size - 1 - s.Home[axisIndex]) / 2;
+        var moved = Quaternion.AngleAxis(90f, AxisVectors[axisIndex]) * center;
+        int turns = Vector3.Dot(moved - center, direction) > 0f ? 1 : 3;
+        move = new Move((Axis)axisIndex, layer, turns);
+        return true;
+    }
 
     public void ResetCube() => SetState(new Cube(size));
 
-    /// <summary>Миттєво докручує поточну анімацію і всю чергу.</summary>
+    /// <summary>Instantly completes the current animation and the whole queue.</summary>
     public void FinishAll()
     {
         if (_animating) CompleteCurrent();
@@ -133,7 +183,7 @@ public class CubeView : MonoBehaviour
         Repaint();
     }
 
-    // ---------------------------------------------------------------- побудова
+    // ---------------------------------------------------------------- building
 
     private void Build(int n)
     {
@@ -193,14 +243,21 @@ public class CubeView : MonoBehaviour
             quad.transform.SetParent(cubie.Transform, false);
             var unityNormal = ToUnityDirection(normal);
             quad.transform.localPosition = unityNormal * 0.487f;
-            // Quad видно з боку -forward, тож forward дивиться всередину куба
+            // The mesh is visible from -forward, so forward points into the cube
             quad.transform.localRotation = Quaternion.LookRotation(-unityNormal);
             quad.transform.localScale = Vector3.one * 0.86f;
             var r = quad.GetComponent<Renderer>();
             r.sharedMaterial = stickerMaterial;
-            int index = face * n * n + row * n + col;
-            _stickers.Add(new Sticker { Renderer = r, Index = index });
-            _stickerByCollider[quad.GetComponent<Collider>()] = index;
+
+            var sticker = new Sticker
+            {
+                Renderer = r,
+                Index = face * n * n + row * n + col,
+                Home = cubie.Home,
+                Normal = unityNormal,
+            };
+            _stickers.Add(sticker);
+            _stickerByCollider[quad.GetComponent<Collider>()] = sticker;
         }
 
         Model = new Cube(n);
@@ -208,8 +265,8 @@ public class CubeView : MonoBehaviour
     }
 
     /// <summary>
-    /// Квадрат 1x1 із заокругленими кутами в площині XY, видимий з боку -Z (як вбудований Quad).
-    /// Віяло трикутників від центру по периметру.
+    /// A 1x1 square with rounded corners in the XY plane, visible from -Z (like the built-in Quad).
+    /// A triangle fan from the centre around the perimeter.
     /// </summary>
     private static Mesh CreateRoundedSquare(float radius, int segmentsPerCorner)
     {
@@ -223,7 +280,7 @@ public class CubeView : MonoBehaviour
         for (int c = 0; c < 4; c++)
         for (int s = 0; s <= segmentsPerCorner; s++)
         {
-            float angle = (c + (float)s / segmentsPerCorner) * Mathf.PI * 0.5f; // проти годинникової
+            float angle = (c + (float)s / segmentsPerCorner) * Mathf.PI * 0.5f; // counter-clockwise
             vertices.Add(new Vector3(corners[c].x + Mathf.Cos(angle) * radius, corners[c].y + Mathf.Sin(angle) * radius, 0f));
         }
 
@@ -231,7 +288,7 @@ public class CubeView : MonoBehaviour
         var triangles = new int[perimeter * 3];
         for (int i = 0; i < perimeter; i++)
         {
-            // за годинниковою, якщо дивитися з -Z: так Unity вважає грань лицьовою
+            // clockwise when seen from -Z, which is what Unity treats as front-facing
             triangles[i * 3] = 0;
             triangles[i * 3 + 1] = 1 + (i + 1) % perimeter;
             triangles[i * 3 + 2] = 1 + i;
@@ -257,7 +314,7 @@ public class CubeView : MonoBehaviour
         return mat;
     }
 
-    /// <summary>Те саме, що Cube.ToPoint: наліпка -> подвоєна точка на поверхні + нормаль грані (модель).</summary>
+    /// <summary>Same as Cube.ToPoint: sticker -> doubled point on the surface + face normal (model space).</summary>
     private static void StickerPoint(int n, int face, int row, int col, out Vector3Int point, out Vector3Int normal)
     {
         int m = n - 1;
@@ -276,7 +333,7 @@ public class CubeView : MonoBehaviour
     private static Vector3 ToUnity(Vector3Int doubled) => new Vector3(doubled.x, doubled.y, -doubled.z) * 0.5f;
     private static Vector3 ToUnityDirection(Vector3Int d) => new Vector3(d.x, d.y, -d.z);
 
-    // ---------------------------------------------------------------- фарбування
+    // ---------------------------------------------------------------- painting
 
     private void Repaint()
     {
@@ -288,7 +345,7 @@ public class CubeView : MonoBehaviour
         Repainted?.Invoke();
     }
 
-    // ---------------------------------------------------------------- анімація
+    // ---------------------------------------------------------------- animation
 
     private void Update()
     {
@@ -312,7 +369,7 @@ public class CubeView : MonoBehaviour
         _animating = true;
         _elapsed = 0f;
 
-        // 3 чверті показуємо як одну чверть у зворотний бік
+        // three quarter turns are shown as one quarter turn the other way
         int turns = move.Turns == 3 ? -1 : move.Turns;
         _targetAngle = 90f * turns;
         _duration = secondsPerTurn * (Mathf.Abs(turns) == 2 ? 1.5f : 1f);
@@ -323,7 +380,7 @@ public class CubeView : MonoBehaviour
         foreach (var c in _cubies)
         {
             int coord = c.Home[(int)move.Axis];
-            int layer = (m - coord) / 2; // шар 0 = додатна грань
+            int layer = (m - coord) / 2; // layer 0 = the positive face
             if (layer >= move.LayerFrom && layer <= move.LayerTo)
             {
                 c.Transform.SetParent(_pivot, true);

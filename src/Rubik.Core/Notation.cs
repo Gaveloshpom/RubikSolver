@@ -5,14 +5,14 @@ using System.Text;
 namespace Rubik.Core
 {
     /// <summary>
-    /// Парсер і форматер нотації (токени розділяються пробілами).
+    /// Notation parser and formatter (tokens are separated by whitespace).
     ///
-    ///   R  U  F  L  D  B     зовнішній шар
-    ///   2R  3D               n-й шар від грані (зріз)
-    ///   Rw  3Rw  (або r)     широкий хід: 2 або n шарів від грані
-    ///   x  y  z              поворот усього куба (за напрямком R, U, F)
-    ///   M  E  S              середній шар для непарного N (за напрямком L, D, F)
-    ///   суфікси              ' = проти годинникової, 2 = півоберт, 2' = 2
+    ///   R  U  F  L  D  B     outer layer
+    ///   2R  3D               n-th layer from the face (slice)
+    ///   Rw  3Rw  (or r)      wide move: 2 or n layers from the face
+    ///   x  y  z              whole-cube rotation (in the direction of R, U, F)
+    ///   M  E  S              middle layer for odd N (in the direction of L, D, F)
+    ///   suffixes             ' = counter-clockwise, 2 = half turn, 2' = 2
     /// </summary>
     public static class Notation
     {
@@ -47,25 +47,25 @@ namespace Rubik.Core
             if (i < tok.Length && tok[i] == '\'') { turns = turns == 2 ? 2 : 3; i++; }
             if (i != tok.Length) throw Bad(tok, "unexpected characters");
 
-            // повороти всього куба
+            // whole-cube rotations
             if (c == 'x' || c == 'y' || c == 'z')
             {
                 if (hasPrefix || wide) throw Bad(tok, "rotations take no prefix or 'w'");
                 return new Move((Axis)(c - 'x'), 0, size - 1, turns);
             }
 
-            // середні шари (непарні N)
+            // middle layers (odd N)
             if (c == 'M' || c == 'E' || c == 'S')
             {
                 if (hasPrefix || wide) throw Bad(tok, "slice moves take no prefix or 'w'");
                 if (size % 2 == 0) throw Bad(tok, "M/E/S exist only for odd N; use numbered layers like 2R");
                 int mid = (size - 1) / 2;
-                if (c == 'M') return new Move(Axis.X, mid, mid, 4 - turns);   // як L
-                if (c == 'E') return new Move(Axis.Y, mid, mid, 4 - turns);   // як D
-                return new Move(Axis.Z, mid, mid, turns);                     // як F
+                if (c == 'M') return new Move(Axis.X, mid, mid, 4 - turns);   // like L
+                if (c == 'E') return new Move(Axis.Y, mid, mid, 4 - turns);   // like D
+                return new Move(Axis.Z, mid, mid, turns);                     // like F
             }
 
-            // маленькі літери = широкі ходи
+            // lowercase letters = wide moves
             if (c == 'u' || c == 'd' || c == 'r' || c == 'l' || c == 'f' || c == 'b')
             {
                 wide = true;
@@ -88,7 +88,7 @@ namespace Rubik.Core
             int k = hasPrefix ? prefix : (wide ? 2 : 1);
             if (k < 1 || k > size) throw Bad(tok, $"layer count {k} is outside 1..{size}");
 
-            // глибини від грані: широкий = [0..k-1], одиночний = [k-1..k-1]
+            // depths from the face: wide = [0..k-1], single = [k-1..k-1]
             int lo = wide ? 0 : k - 1;
             int hi = k - 1;
 
@@ -100,9 +100,9 @@ namespace Rubik.Core
         private static FormatException Bad(string tok, string why) =>
             new FormatException($"Invalid move '{tok}': {why}.");
 
-        // ---------------------------------------------------------------- форматування
+        // ---------------------------------------------------------------- formatting
 
-        /// <param name="useMES">Якщо true, замінює центральні шари (напр. 2R) на M, E, S (з правильними напрямками).</param>
+        /// <param name="useMES">If true, middle layers (e.g. 2R) are written as M, E, S (with the right directions).</param>
         public static string Format(IEnumerable<Move> moves, int size, bool useMES = false)
         {
             var sb = new StringBuilder();
@@ -125,22 +125,22 @@ namespace Rubik.Core
                 }
                 else
                 {
-                    // внутрішній діапазон: розкладаємо на одиночні шари
+                    // inner range: split into single layers
                     for (int layer = m.LayerFrom; layer <= m.LayerTo; layer++)
                     {
-                        // Якщо це центральний шар непарного куба і увімкнена опція useMES
+                        // The middle layer of an odd cube with useMES enabled
                         if (useMES && size % 2 != 0 && layer == (size - 1) / 2)
                         {
-                            if (m.Axis == Axis.X) // M слідує за L (негативний напрямок X)
+                            if (m.Axis == Axis.X) // M follows L (negative X direction)
                                 Append(sb, "M", 4 - m.Turns);
-                            else if (m.Axis == Axis.Y) // E слідує за D (негативний напрямок Y)
+                            else if (m.Axis == Axis.Y) // E follows D (negative Y direction)
                                 Append(sb, "E", 4 - m.Turns);
-                            else // S слідує за F (позитивний напрямок Z)
+                            else // S follows F (positive Z direction)
                                 Append(sb, "S", m.Turns);
                         }
                         else
                         {
-                            // звичайний запис (напр. "2R")
+                            // regular notation (e.g. "2R")
                             Append(sb, (layer + 1) + "RUF"[(int)m.Axis].ToString(), m.Turns);
                         }
                     }

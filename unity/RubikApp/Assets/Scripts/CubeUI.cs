@@ -1,9 +1,10 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 /// <summary>
-/// Екранний UI (UI Toolkit, зібраний кодом): розгортка куба, палітра, кнопки, статус.
-/// Розгортка завжди дзеркалить те, що показує 3D-куб; у режимі введення по ній можна малювати.
+/// Screen UI (UI Toolkit, built in code): settings, cube net, palette, buttons, status and the solution player.
+/// The net always mirrors what the 3D cube shows; in edit mode you can paint on it.
 /// </summary>
 [RequireComponent(typeof(UIDocument))]
 public class CubeUI : MonoBehaviour
@@ -12,30 +13,37 @@ public class CubeUI : MonoBehaviour
     public float cellSize = 26f;
 
     private const string PanelClass = "rubik-panel";
+    private const string ScalePrefsKey = "uiScale";
+    private const float MinScale = 0.6f, MaxScale = 1.8f, ScaleStep = 0.1f;
 
-    // Розташування граней у розгортці (стовпець, рядок у сітці 4x3 граней), порядок U R F D L B
+    // Position of each face in the net (column, row in a 4x3 grid of faces), order U R F D L B
     private static readonly Vector2Int[] FaceSlots =
     {
         new Vector2Int(1, 0), new Vector2Int(2, 1), new Vector2Int(1, 1),
         new Vector2Int(1, 2), new Vector2Int(0, 1), new Vector2Int(3, 1),
     };
 
+    private static readonly Color ButtonColor = new Color(0.22f, 0.24f, 0.29f);
+    private static readonly Color AccentColor = new Color(0.25f, 0.55f, 0.95f);
+    private static readonly Color TextColor = new Color(0.9f, 0.9f, 0.9f);
+
     private static CubeUI _instance;
 
     private VisualElement _root;
+    private PanelSettings _panelSettings;
+    private Vector2Int _baseReferenceResolution;
+    private float _scale = 1f;
+
     private readonly VisualElement[] _cells = new VisualElement[CubeEditor.StickerCount];
     private readonly VisualElement[] _swatches = new VisualElement[6];
     private VisualElement _palette, _playButtons, _editButtons, _speedRow, _solutionPanel, _tokens;
     private Button _applyButton, _playButton;
-    private Label _status, _hint, _progress, _nextMove, _speedValue;
+    private Label _status, _hint, _progress, _nextMove, _speedValue, _scaleValue;
     private Slider _speed;
-    private readonly System.Collections.Generic.List<Label> _tokenLabels = new System.Collections.Generic.List<Label>();
+    private readonly List<Label> _tokenLabels = new List<Label>();
     private int _tokensVersion = -1;
 
-    private static readonly Color ButtonColor = new Color(0.22f, 0.24f, 0.29f);
-    private static readonly Color AccentColor = new Color(0.25f, 0.55f, 0.95f);
-
-    /// <summary>Чи вказівник над панеллю UI (щоб камера і клік по кубу його ігнорували).</summary>
+    /// <summary>Whether the pointer is over a UI panel (so the camera and cube clicks ignore it).</summary>
     public static bool IsPointerOverUi(Vector2 screenPosition)
     {
         var panel = _instance != null ? _instance._root?.panel : null;
@@ -49,30 +57,52 @@ public class CubeUI : MonoBehaviour
     private void Start()
     {
         _instance = this;
-        _root = GetComponent<UIDocument>().rootVisualElement;
+        var document = GetComponent<UIDocument>();
+
+        // work on a copy so changing the UI size does not modify the asset
+        _panelSettings = Instantiate(document.panelSettings);
+        document.panelSettings = _panelSettings;
+        _baseReferenceResolution = _panelSettings.referenceResolution;
+        SetScale(PlayerPrefs.GetFloat(ScalePrefsKey, 1f), save: false);
+
+        _root = document.rootVisualElement;
         _root.pickingMode = PickingMode.Ignore;
-        Build();
+        Rebuild();
         app.view.Repainted += RefreshNet;
         app.Changed += RefreshPanel;
-        RefreshNet();
-        RefreshPanel();
+        Loc.Changed += Rebuild;
     }
 
     private void OnDestroy()
     {
         if (_instance == this) _instance = null;
+        Loc.Changed -= Rebuild;
         if (app != null)
         {
             app.Changed -= RefreshPanel;
             if (app.view != null) app.view.Repainted -= RefreshNet;
         }
+        if (_panelSettings != null) Destroy(_panelSettings);
     }
 
-    // ---------------------------------------------------------------- побудова
+    private void SetScale(float scale, bool save = true)
+    {
+        _scale = Mathf.Clamp(Mathf.Round(scale / ScaleStep) * ScaleStep, MinScale, MaxScale);
+        // ScaleWithScreenSize: a smaller reference resolution makes everything bigger
+        _panelSettings.referenceResolution = Vector2Int.RoundToInt((Vector2)_baseReferenceResolution / _scale);
+        if (_scaleValue != null) _scaleValue.text = $"{_scale * 100f:0}%";
+        if (!save) return;
+        PlayerPrefs.SetFloat(ScalePrefsKey, _scale);
+        PlayerPrefs.Save();
+    }
 
-    private void Build()
+    // ---------------------------------------------------------------- building
+
+    /// <summary>Builds the whole UI from scratch (also on a language switch).</summary>
+    private void Rebuild()
     {
         _root.Clear();
+        _tokensVersion = -1;
 
         var side = Panel();
         side.style.position = Position.Absolute;
@@ -80,10 +110,11 @@ public class CubeUI : MonoBehaviour
         side.style.top = 16;
         _root.Add(side);
 
-        side.Add(Title("Розгортка"));
+        side.Add(BuildSettingsRow());
+        side.Add(Title(Loc.T("net.title")));
         var net = BuildNet();
         side.Add(net);
-        side.style.width = net.style.width.value.value + 24; // + відступи панелі
+        side.style.width = net.style.width.value.value + 24; // + panel padding
 
         _palette = new VisualElement();
         _palette.style.flexDirection = FlexDirection.Row;
@@ -97,7 +128,7 @@ public class CubeUI : MonoBehaviour
             swatch.style.marginRight = 6;
             swatch.style.backgroundColor = CubeView.Palette[c];
             SetRadius(swatch, 6);
-            swatch.tooltip = $"Колір {c + 1}";
+            swatch.tooltip = Loc.T("color.tooltip", c + 1);
             swatch.RegisterCallback<PointerDownEvent>(_ => app.SelectColor(color));
             _swatches[c] = swatch;
             _palette.Add(swatch);
@@ -107,39 +138,32 @@ public class CubeUI : MonoBehaviour
         _status = new Label();
         _status.style.marginTop = 10;
         _status.style.whiteSpace = WhiteSpace.Normal;
-        _status.style.color = new Color(0.9f, 0.9f, 0.9f);
+        _status.style.color = TextColor;
         _status.style.fontSize = 14;
         side.Add(_status);
 
         _playButtons = ButtonRow(
-            MakeButton("Ввести свій куб", app.BeginEdit),
-            MakeButton("Перемішати", app.Scramble),
-            MakeButton("Розв'язати", app.Solve),
-            MakeButton("Скинути", app.ResetCube));
+            MakeButton(Loc.T("btn.edit"), app.BeginEdit),
+            MakeButton(Loc.T("btn.scramble"), app.Scramble),
+            MakeButton(Loc.T("btn.solve"), app.Solve),
+            MakeButton(Loc.T("btn.reset"), app.ResetCube));
         side.Add(_playButtons);
 
-        _applyButton = MakeButton("Готово", app.ApplyEdit);
+        _applyButton = MakeButton(Loc.T("btn.done"), app.ApplyEdit);
         _editButtons = ButtonRow(
             _applyButton,
-            MakeButton("Очистити", app.ClearEdit),
-            MakeButton("Скасувати", app.CancelEdit));
+            MakeButton(Loc.T("btn.clear"), app.ClearEdit),
+            MakeButton(Loc.T("btn.cancel"), app.CancelEdit));
         side.Add(_editButtons);
 
-        _speedRow = new VisualElement();
-        _speedRow.style.flexDirection = FlexDirection.Row;
-        _speedRow.style.alignItems = Align.Center;
+        _speedRow = Row();
         _speedRow.style.marginTop = 4;
-        var speedLabel = new Label("Швидкість");
-        speedLabel.style.color = new Color(0.9f, 0.9f, 0.9f);
-        speedLabel.style.fontSize = 13;
         _speed = new Slider(0.5f, 12f);
         _speed.style.flexGrow = 1;
         _speed.RegisterValueChangedCallback(e => app.TurnsPerSecond = e.newValue);
-        _speedValue = new Label();
-        _speedValue.style.color = new Color(0.9f, 0.9f, 0.9f);
-        _speedValue.style.fontSize = 13;
-        _speedValue.style.width = 70;
-        _speedRow.Add(speedLabel);
+        _speedValue = SmallLabel("");
+        _speedValue.style.width = 80;
+        _speedRow.Add(SmallLabel(Loc.T("speed.label")));
         _speedRow.Add(_speed);
         _speedRow.Add(_speedValue);
         side.Add(_speedRow);
@@ -151,6 +175,49 @@ public class CubeUI : MonoBehaviour
         _hint.style.fontSize = 12;
         side.Add(_hint);
 
+        BuildPlayer();
+        RefreshNet();
+        RefreshPanel();
+    }
+
+    private VisualElement BuildSettingsRow()
+    {
+        var row = Row();
+        row.style.marginBottom = 10;
+        row.style.flexWrap = Wrap.Wrap;
+
+        row.Add(SmallLabel(Loc.T("settings.language")));
+        foreach (var (language, code) in new[] { (Language.English, "EN"), (Language.Ukrainian, "UK") })
+        {
+            var b = MakeButton(code, () => Loc.Current = language);
+            b.style.marginLeft = 6;
+            b.style.marginRight = 0;
+            b.style.marginBottom = 0;
+            b.style.backgroundColor = Loc.Current == language ? AccentColor : ButtonColor;
+            row.Add(b);
+        }
+
+        var spacer = new VisualElement();
+        spacer.style.flexGrow = 1;
+        row.Add(spacer);
+
+        row.Add(SmallLabel(Loc.T("settings.uiScale")));
+        var smaller = MakeButton("-", () => SetScale(_scale - ScaleStep));
+        var bigger = MakeButton("+", () => SetScale(_scale + ScaleStep));
+        smaller.style.marginLeft = 6;
+        smaller.style.marginRight = bigger.style.marginRight = 0;
+        smaller.style.marginBottom = bigger.style.marginBottom = 0;
+        _scaleValue = SmallLabel($"{_scale * 100f:0}%");
+        _scaleValue.style.width = 46;
+        _scaleValue.style.unityTextAlign = TextAnchor.MiddleCenter;
+        row.Add(smaller);
+        row.Add(_scaleValue);
+        row.Add(bigger);
+        return row;
+    }
+
+    private void BuildPlayer()
+    {
         _solutionPanel = Panel();
         _solutionPanel.style.position = Position.Absolute;
         _solutionPanel.style.left = 16;
@@ -158,9 +225,8 @@ public class CubeUI : MonoBehaviour
         _solutionPanel.style.bottom = 16;
         _root.Add(_solutionPanel);
 
-        var header = new VisualElement();
-        header.style.flexDirection = FlexDirection.Row;
-        header.style.alignItems = Align.Center;
+        var header = Row();
+        header.style.flexWrap = Wrap.Wrap;
         _solutionPanel.Add(header);
 
         _nextMove = new Label();
@@ -176,12 +242,12 @@ public class CubeUI : MonoBehaviour
         _progress.style.marginRight = 16;
         header.Add(_progress);
 
-        _playButton = MakeButton("Грати", app.TogglePlay);
-        header.Add(MakeButton("|< Початок", () => app.JumpTo(0)));
-        header.Add(MakeButton("< Назад", app.StepBack));
+        _playButton = MakeButton(Loc.T("player.play"), app.TogglePlay);
+        header.Add(MakeButton(Loc.T("player.start"), () => app.JumpTo(0)));
+        header.Add(MakeButton(Loc.T("player.back"), app.StepBack));
         header.Add(_playButton);
-        header.Add(MakeButton("Вперед >", app.StepForward));
-        header.Add(MakeButton("Кінець >|", () => app.JumpTo(app.SolutionLength)));
+        header.Add(MakeButton(Loc.T("player.forward"), app.StepForward));
+        header.Add(MakeButton(Loc.T("player.end"), () => app.JumpTo(app.SolutionLength)));
 
         _tokens = new VisualElement();
         _tokens.style.flexDirection = FlexDirection.Row;
@@ -205,7 +271,7 @@ public class CubeUI : MonoBehaviour
             token.style.marginRight = 4;
             token.style.marginBottom = 4;
             SetRadius(token, 4);
-            token.tooltip = $"Перейти до стану після ходу {after}";
+            token.tooltip = Loc.T("player.token", after);
             token.RegisterCallback<PointerDownEvent>(_ => app.JumpTo(after));
             _tokenLabels.Add(token);
             _tokens.Add(token);
@@ -235,7 +301,7 @@ public class CubeUI : MonoBehaviour
             cell.style.height = cellSize;
             SetRadius(cell, 3);
 
-            // натиснув і веди — фарбує кілька наліпок підряд
+            // press and drag to paint several stickers in a row
             cell.RegisterCallback<PointerDownEvent>(_ => app.PaintSticker(index));
             cell.RegisterCallback<PointerEnterEvent>(e =>
             {
@@ -259,12 +325,28 @@ public class CubeUI : MonoBehaviour
         return p;
     }
 
+    private static VisualElement Row()
+    {
+        var row = new VisualElement();
+        row.style.flexDirection = FlexDirection.Row;
+        row.style.alignItems = Align.Center;
+        return row;
+    }
+
     private static Label Title(string text)
     {
         var l = new Label(text);
         l.style.color = Color.white;
         l.style.fontSize = 16;
         l.style.unityFontStyleAndWeight = FontStyle.Bold;
+        return l;
+    }
+
+    private static Label SmallLabel(string text)
+    {
+        var l = new Label(text);
+        l.style.color = TextColor;
+        l.style.fontSize = 13;
         return l;
     }
 
@@ -306,7 +388,7 @@ public class CubeUI : MonoBehaviour
         e.style.borderLeftColor = e.style.borderRightColor = e.style.borderTopColor = e.style.borderBottomColor = color;
     }
 
-    // ---------------------------------------------------------------- оновлення
+    // ---------------------------------------------------------------- refreshing
 
     private void RefreshNet()
     {
@@ -327,14 +409,11 @@ public class CubeUI : MonoBehaviour
             SetBorder(_swatches[c], c == app.Editor.SelectedColor ? 3 : 0, Color.white);
 
         _status.text = app.Status;
-        _hint.text = editing
-            ? "Тримай куб білим центром угору і зеленим до себе. Вибери колір (або 1–6) і клікай по наліпках тут чи на 3D-кубі. Esc — скасувати."
-            : "Клавіші: U R F D L B, x y z (Shift — проти годинникової), Space — скрамбл, Enter — розв'язати, +/- — швидкість. " +
-              "Рішення: ← → — крок, P — грати/пауза, Home/End — початок/кінець. Миша: тягни — обертати, коліщатко — зум.";
+        _hint.text = Loc.T(editing ? "hint.edit" : "hint.play");
 
         Show(_speedRow, !editing);
         _speed.SetValueWithoutNotify(app.TurnsPerSecond);
-        _speedValue.text = $" {app.TurnsPerSecond:0.#} ход/с";
+        _speedValue.text = Loc.T("speed.value", app.TurnsPerSecond);
 
         RefreshPlayer();
     }
@@ -347,10 +426,10 @@ public class CubeUI : MonoBehaviour
 
         int pos = app.SolutionPosition, total = app.SolutionLength;
         _nextMove.text = pos < total ? app.SolutionMove(pos) : "—";
-        _progress.text = total == 0 ? "Куб уже зібраний"
-            : pos < total ? $"Наступний хід\n{pos} / {total}"
-            : $"Зібрано!\n{total} / {total}";
-        _playButton.text = app.IsPlaying ? "Пауза" : "Грати";
+        _progress.text = total == 0 ? Loc.T("status.alreadySolved")
+            : pos < total ? Loc.T("player.next", pos, total)
+            : Loc.T("player.solved", total);
+        _playButton.text = Loc.T(app.IsPlaying ? "player.pause" : "player.play");
         _playButton.style.backgroundColor = app.IsPlaying ? AccentColor : ButtonColor;
 
         for (int i = 0; i < _tokenLabels.Count; i++)
