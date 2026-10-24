@@ -39,7 +39,7 @@ namespace Rubik.Solver3x3
         {
             if (cube.Size != 3) throw new ArgumentException("LayerByLayerSolver only supports 3x3 cubes.");
 
-            // 1. Спроба знайти оптимальне коротке рішення (до 7 ходів)
+            // 1. Try to find an optimal short solution (up to 7 moves)
             var shortSolution = OptimalShortSearch.Solve(cube, maxDepth: 7);
             if (shortSolution != null)
             {
