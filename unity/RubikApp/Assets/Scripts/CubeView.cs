@@ -178,6 +178,7 @@ public class CubeView : MonoBehaviour
             byHome[home] = cubie;
         }
 
+        var stickerMesh = CreateRoundedSquare(0.14f, 6);
         for (int face = 0; face < 6; face++)
         for (int row = 0; row < n; row++)
         for (int col = 0; col < n; col++)
@@ -185,8 +186,10 @@ public class CubeView : MonoBehaviour
             StickerPoint(n, face, row, col, out var point, out var normal);
             var cubie = byHome[point - normal];
 
-            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            quad.name = $"Sticker {(Face)face}{row}{col}";
+            var quad = new GameObject($"Sticker {(Face)face}{row}{col}",
+                typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider));
+            quad.GetComponent<MeshFilter>().sharedMesh = stickerMesh;
+            quad.GetComponent<MeshCollider>().sharedMesh = stickerMesh;
             quad.transform.SetParent(cubie.Transform, false);
             var unityNormal = ToUnityDirection(normal);
             quad.transform.localPosition = unityNormal * 0.487f;
@@ -202,6 +205,47 @@ public class CubeView : MonoBehaviour
 
         Model = new Cube(n);
         Repaint();
+    }
+
+    /// <summary>
+    /// Квадрат 1x1 із заокругленими кутами в площині XY, видимий з боку -Z (як вбудований Quad).
+    /// Віяло трикутників від центру по периметру.
+    /// </summary>
+    private static Mesh CreateRoundedSquare(float radius, int segmentsPerCorner)
+    {
+        var vertices = new List<Vector3> { Vector3.zero };
+        float inner = 0.5f - radius;
+        var corners = new[]
+        {
+            new Vector2(inner, inner), new Vector2(-inner, inner),
+            new Vector2(-inner, -inner), new Vector2(inner, -inner),
+        };
+        for (int c = 0; c < 4; c++)
+        for (int s = 0; s <= segmentsPerCorner; s++)
+        {
+            float angle = (c + (float)s / segmentsPerCorner) * Mathf.PI * 0.5f; // проти годинникової
+            vertices.Add(new Vector3(corners[c].x + Mathf.Cos(angle) * radius, corners[c].y + Mathf.Sin(angle) * radius, 0f));
+        }
+
+        int perimeter = vertices.Count - 1;
+        var triangles = new int[perimeter * 3];
+        for (int i = 0; i < perimeter; i++)
+        {
+            // за годинниковою, якщо дивитися з -Z: так Unity вважає грань лицьовою
+            triangles[i * 3] = 0;
+            triangles[i * 3 + 1] = 1 + (i + 1) % perimeter;
+            triangles[i * 3 + 2] = 1 + i;
+        }
+
+        var normals = new Vector3[vertices.Count];
+        for (int i = 0; i < normals.Length; i++) normals[i] = Vector3.back;
+
+        var mesh = new Mesh { name = "RoundedSticker" };
+        mesh.SetVertices(vertices);
+        mesh.SetNormals(normals);
+        mesh.SetTriangles(triangles, 0);
+        mesh.RecalculateBounds();
+        return mesh;
     }
 
     private static Material CreateFallbackMaterial(Color color)
