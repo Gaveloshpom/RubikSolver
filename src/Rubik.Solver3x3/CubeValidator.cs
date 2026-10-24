@@ -45,26 +45,26 @@ namespace Rubik.Solver3x3
     {
         private const int U = 0, R = 1, F = 2, D = 3, L = 4, B = 5;
 
-        private static readonly int[][] CornerFacelets =
+        internal static readonly int[][] CornerFacelets =
         {
             new[] { 8, 9, 20 }, new[] { 6, 18, 38 }, new[] { 0, 36, 47 }, new[] { 2, 45, 11 },
             new[] { 29, 26, 15 }, new[] { 27, 44, 24 }, new[] { 33, 53, 42 }, new[] { 35, 17, 51 },
         };
 
-        private static readonly int[][] CornerColors =
+        internal static readonly int[][] CornerColors =
         {
             new[] { U, R, F }, new[] { U, F, L }, new[] { U, L, B }, new[] { U, B, R },
             new[] { D, F, R }, new[] { D, L, F }, new[] { D, B, L }, new[] { D, R, B },
         };
 
-        private static readonly int[][] EdgeFacelets =
+        internal static readonly int[][] EdgeFacelets =
         {
             new[] { 5, 10 }, new[] { 7, 19 }, new[] { 3, 37 }, new[] { 1, 46 },
             new[] { 32, 16 }, new[] { 28, 25 }, new[] { 30, 43 }, new[] { 34, 52 },
             new[] { 23, 12 }, new[] { 21, 41 }, new[] { 50, 39 }, new[] { 48, 14 },
         };
 
-        private static readonly int[][] EdgeColors =
+        internal static readonly int[][] EdgeColors =
         {
             new[] { U, R }, new[] { U, F }, new[] { U, L }, new[] { U, B },
             new[] { D, R }, new[] { D, F }, new[] { D, L }, new[] { D, B },

@@ -51,6 +51,128 @@ foreach (var len in new[] { 0, 1, 2, 3, 5, 8, 15, 25, 50, 100 })
     for (int seed = 0; seed < 100; seed++)
         Check(3, len, seed * 97 + len);
 
+var lblCounts = moveCounts.ToList();
+moveCounts.Clear();
+
+// KociembaSolver: random 20-move scrambles must be solved fast and short; the time limit is generous
+// so that a slow regression shows up as a time report rather than as a failure on a busy machine.
+var kociembaTimes = new List<double>();
+var kociembaLengths = new List<int>();
+
+void CheckKociemba(string name, Cube cube, int maxLength)
+{
+    total++;
+    var t = Stopwatch.StartNew();
+    var solution = KociembaSolver.Solve(cube.Clone(), TimeSpan.FromSeconds(10));
+    t.Stop();
+    if (solution == null)
+    {
+        failures++;
+        Console.WriteLine($"FAIL kociemba {name}: no solution");
+        return;
+    }
+    var check = cube.Clone();
+    check.Apply(solution);
+    if (!check.IsSolved || solution.Count > maxLength)
+    {
+        failures++;
+        Console.WriteLine($"FAIL kociemba {name}: solved={check.IsSolved}, length={solution.Count}");
+        return;
+    }
+    kociembaTimes.Add(t.Elapsed.TotalMilliseconds);
+    kociembaLengths.Add(solution.Count);
+}
+
+var tableTimer = Stopwatch.StartNew();
+KociembaSolver.Initialize();
+long tableMs = tableTimer.ElapsedMilliseconds;
+
+for (int seed = 0; seed < 200; seed++)
+{
+    var cube = new Cube(3);
+    cube.Apply(Scrambler.Generate(3, 20, seed));
+    CheckKociemba($"len=20 seed={seed}", cube, 30);
+}
+var randomTimes = kociembaTimes.OrderBy(x => x).ToList();
+var randomLengths = kociembaLengths.ToList();
+
+// Short scrambles: the solution must not be longer than the scramble.
+foreach (var len in new[] { 0, 1, 2, 3, 4, 5, 6 })
+    for (int seed = 0; seed < 30; seed++)
+    {
+        var cube = new Cube(3);
+        cube.Apply(Scrambler.Generate(3, len, seed * 31 + len));
+        CheckKociemba($"len={len} seed={seed}", cube, len);
+    }
+
+// A cube held in another orientation (centres moved) is solved with outer-face moves too.
+{
+    var cube = new Cube(3);
+    cube.Apply("R U F' L2 D B' x y' z2");
+    CheckKociemba("rotated", cube, 30);
+}
+
+// Impossible cubes: null, quickly.
+void ExpectKociembaNull(string name, byte[] stickers)
+{
+    total++;
+    var t = Stopwatch.StartNew();
+    var solution = KociembaSolver.Solve(Cube.FromStickers(3, stickers));
+    if (solution != null || t.ElapsedMilliseconds > 1000)
+    {
+        failures++;
+        Console.WriteLine($"FAIL kociemba {name}: expected null quickly, got {(solution == null ? "null" : solution.Count + " moves")} in {t.ElapsedMilliseconds} ms");
+    }
+}
+{
+    var cube = new Cube(3);
+    cube.Apply(Scrambler.Generate(3, 20, 12345));
+    var s = cube.Stickers.ToArray();
+    var flipped = (byte[])s.Clone();
+    (flipped[7], flipped[19]) = (flipped[19], flipped[7]);
+    ExpectKociembaNull("flipped edge", flipped);
+    var twisted = (byte[])s.Clone();
+    (twisted[8], twisted[9], twisted[20]) = (twisted[20], twisted[8], twisted[9]);
+    ExpectKociembaNull("twisted corner", twisted);
+    var swapped = (byte[])s.Clone();
+    (swapped[7], swapped[5]) = (swapped[5], swapped[7]);
+    (swapped[19], swapped[10]) = (swapped[10], swapped[19]);
+    ExpectKociembaNull("swapped edges", swapped);
+}
+
+// A zero time limit must not throw (null or a valid solution are both fine).
+{
+    total++;
+    var cube = new Cube(3);
+    cube.Apply(Scrambler.Generate(3, 20, 7));
+    var solution = KociembaSolver.Solve(cube.Clone(), TimeSpan.Zero);
+    if (solution != null)
+    {
+        var check = cube.Clone();
+        check.Apply(solution);
+        if (!check.IsSolved) { failures++; Console.WriteLine("FAIL kociemba zero time limit: wrong solution"); }
+    }
+}
+
+// Concurrent solves share the tables.
+{
+    var results = new bool[16];
+    System.Threading.Tasks.Parallel.For(0, results.Length, i =>
+    {
+        var cube = new Cube(3);
+        cube.Apply(Scrambler.Generate(3, 25, 1000 + i));
+        var solution = KociembaSolver.Solve(cube.Clone());
+        var check = cube.Clone();
+        if (solution != null) check.Apply(solution);
+        results[i] = solution != null && check.IsSolved;
+    });
+    for (int i = 0; i < results.Length; i++)
+    {
+        total++;
+        if (!results[i]) { failures++; Console.WriteLine($"FAIL kociemba parallel {i}"); }
+    }
+}
+
 // CubeValidator: every scramble is valid, while single "physically impossible" changes are not.
 void ExpectValidation(string name, byte[] stickers, CubeValidationError expected)
 {
@@ -94,7 +216,10 @@ ExpectValidation("wrong count", wrongCount, CubeValidationError.WrongCount);
 
 Console.WriteLine();
 Console.WriteLine($"Solved: {total - failures}/{total} in {sw.ElapsedMilliseconds} ms");
-if (moveCounts.Count > 0)
-    Console.WriteLine($"Solution length — min: {moveCounts.Min()}, avg: {moveCounts.Average():F1}, max: {moveCounts.Max()}");
+if (lblCounts.Count > 0)
+    Console.WriteLine($"Layer-by-layer length — min: {lblCounts.Min()}, avg: {lblCounts.Average():F1}, max: {lblCounts.Max()}");
+if (randomTimes.Count > 0)
+    Console.WriteLine($"Kociemba (200 x 20-move scrambles, tables {tableMs} ms) — time median: {randomTimes[randomTimes.Count / 2]:F0} ms, " +
+                      $"max: {randomTimes[randomTimes.Count - 1]:F0} ms; length avg: {randomLengths.Average():F1}, max: {randomLengths.Max()}");
 
 return failures == 0 ? 0 : 1;
