@@ -27,14 +27,43 @@ public class CubeAppController : MonoBehaviour
     public bool IsSolving => _solveTask != null;
     public CubeValidation EditValidation { get; private set; }
     public string Status { get; private set; } = "";
-    public string SolutionText { get; private set; } = "";
+
+    // ---- програвач рішення
+    private List<Move> _solution;
+    private Cube _solutionStart;
+
+    public bool HasSolution => _solution != null;
+    /// <summary>Змінюється щоразу, коли з'являється нове рішення або воно скидається.</summary>
+    public int SolutionVersion { get; private set; }
+    public int SolutionLength => _solution?.Count ?? 0;
+    /// <summary>Скільки ходів рішення вже зроблено (з урахуванням тих, що ще анімуються).</summary>
+    public int SolutionPosition { get; private set; }
+    public bool IsPlaying { get; private set; }
+    public string SolutionMove(int i) => Notation.Format(new[] { _solution[i] }, view.size);
+
+    /// <summary>Швидкість звичайних ходів і програвача, ходів за секунду.</summary>
+    public float TurnsPerSecond
+    {
+        get => 1f / _normalSpeed;
+        set
+        {
+            _normalSpeed = Mathf.Clamp(1f / value, 0.05f, 2f);
+            if (!view.IsBusy || IsPlaying) view.secondsPerTurn = _normalSpeed;
+            Changed?.Invoke();
+        }
+    }
 
     /// <summary>Змінився режим, статус або рішення.</summary>
     public event Action Changed;
 
+    private void Awake()
+    {
+        // в Awake, бо UI читає швидкість уже у своєму Start
+        _normalSpeed = view.secondsPerTurn;
+    }
+
     private void Start()
     {
-        _normalSpeed = view.secondsPerTurn;
         _tablesReady = Task.Run(() =>
         {
             if (!PruningTables.IsInitialized) PruningTables.Initialize(new Cube(3));
@@ -45,8 +74,65 @@ public class CubeAppController : MonoBehaviour
     {
         if (!view.IsBusy) view.secondsPerTurn = _normalSpeed;
         PollSolve();
+        if (IsPlaying && !view.IsBusy)
+        {
+            if (SolutionPosition < SolutionLength) StepForward(keepPlaying: true);
+            else { IsPlaying = false; Changed?.Invoke(); }
+        }
         if (IsEditing) HandleStickerClicks();
         else HandleKeyboard();
+    }
+
+    // ---------------------------------------------------------------- програвач
+
+    public void StepForward() => StepForward(keepPlaying: false);
+
+    private void StepForward(bool keepPlaying)
+    {
+        if (!HasSolution || SolutionPosition >= SolutionLength) return;
+        IsPlaying = keepPlaying;
+        view.Enqueue(_solution[SolutionPosition++]);
+        Changed?.Invoke();
+    }
+
+    public void StepBack()
+    {
+        if (!HasSolution || SolutionPosition == 0) return;
+        IsPlaying = false;
+        view.Enqueue(_solution[--SolutionPosition].Inverse());
+        Changed?.Invoke();
+    }
+
+    /// <summary>Миттєво ставить стан "після перших position ходів рішення".</summary>
+    public void JumpTo(int position)
+    {
+        if (!HasSolution) return;
+        position = Mathf.Clamp(position, 0, SolutionLength);
+        var cube = _solutionStart.Clone();
+        for (int i = 0; i < position; i++) cube.Apply(_solution[i]);
+        view.SetState(cube);
+        SolutionPosition = position;
+        IsPlaying = false;
+        Changed?.Invoke();
+    }
+
+    public void TogglePlay()
+    {
+        if (!HasSolution) return;
+        if (IsPlaying) { IsPlaying = false; Changed?.Invoke(); return; }
+        if (SolutionPosition >= SolutionLength) JumpTo(0);
+        view.secondsPerTurn = _normalSpeed;
+        IsPlaying = true;
+        Changed?.Invoke();
+    }
+
+    private void ClearSolution()
+    {
+        if (_solution != null) SolutionVersion++;
+        _solution = null;
+        _solutionStart = null;
+        SolutionPosition = 0;
+        IsPlaying = false;
     }
 
     // ---------------------------------------------------------------- звичайний режим
@@ -54,28 +140,32 @@ public class CubeAppController : MonoBehaviour
     public void ResetCube()
     {
         _solveTask = null; // результат розв'язання для старого стану більше не потрібен
+        ClearSolution();
         view.ResetCube();
-        SolutionText = "";
         SetStatus("Скинуто");
     }
 
     public void Scramble()
     {
-        if (IsEditing || IsSolving || view.IsBusy) return;
+        if (IsEditing || IsSolving) return;
+        view.FinishAll();
         var scramble = Scrambler.Generate(view.size, scrambleLength, Environment.TickCount);
         view.secondsPerTurn = scrambleSecondsPerTurn;
         view.Enqueue(scramble);
-        SolutionText = "";
+        ClearSolution();
         SetStatus("Скрамбл: " + Notation.Format(scramble, view.size));
     }
 
     public void Solve()
     {
-        if (IsEditing || IsSolving || view.IsBusy) return;
+        if (IsEditing || IsSolving) return;
+        view.FinishAll();
         if (view.size != 3) { SetStatus("Солвер підтримує тільки 3x3"); return; }
         if (view.Model.IsSolved) { SetStatus("Куб уже зібраний"); return; }
 
+        ClearSolution();
         var start = view.Model.Clone();
+        _solutionStart = start.Clone();
         _solveTask = Task.Run(async () =>
         {
             await _tablesReady;
@@ -84,11 +174,7 @@ public class CubeAppController : MonoBehaviour
         SetStatus("Шукаю рішення...");
     }
 
-    public void ChangeSpeed(float factor)
-    {
-        _normalSpeed = Mathf.Clamp(_normalSpeed * factor, 0.03f, 1f);
-        view.secondsPerTurn = _normalSpeed;
-    }
+    public void ChangeSpeed(float factor) => TurnsPerSecond *= factor;
 
     private void PollSolve()
     {
@@ -102,10 +188,10 @@ public class CubeAppController : MonoBehaviour
             SetStatus("Помилка солвера (див. Console)");
             return;
         }
-        var solution = task.Result;
-        SolutionText = Notation.Format(solution, view.size);
-        view.Enqueue(solution);
-        SetStatus($"Рішення: {solution.Count} ходів");
+        _solution = task.Result;
+        SolutionPosition = 0;
+        SolutionVersion++;
+        SetStatus($"Рішення: {_solution.Count} ходів. «Грати» або → — крок");
     }
 
     private void HandleKeyboard()
@@ -115,6 +201,15 @@ public class CubeAppController : MonoBehaviour
 
         if (kb.backspaceKey.wasPressedThisFrame) ResetCube();
         if (IsSolving) return;
+
+        if (HasSolution)
+        {
+            if (kb.rightArrowKey.wasPressedThisFrame) StepForward();
+            if (kb.leftArrowKey.wasPressedThisFrame) StepBack();
+            if (kb.homeKey.wasPressedThisFrame) JumpTo(0);
+            if (kb.endKey.wasPressedThisFrame) JumpTo(SolutionLength);
+            if (kb.pKey.wasPressedThisFrame) TogglePlay();
+        }
 
         // ходи з клавіатури стають у чергу навіть під час анімації
         bool prime = kb.shiftKey.isPressed;
@@ -136,7 +231,14 @@ public class CubeAppController : MonoBehaviour
 
     private void TryMoveKey(UnityEngine.InputSystem.Controls.KeyControl key, string move, bool prime)
     {
-        if (key.wasPressedThisFrame) view.Enqueue(Notation.Parse(prime ? move + "'" : move, view.size));
+        if (!key.wasPressedThisFrame) return;
+        view.Enqueue(Notation.Parse(prime ? move + "'" : move, view.size));
+        if (HasSolution)
+        {
+            // ручний хід — рішення більше не відповідає кубу
+            ClearSolution();
+            SetStatus("");
+        }
     }
 
     // ---------------------------------------------------------------- режим введення
@@ -145,10 +247,10 @@ public class CubeAppController : MonoBehaviour
     {
         if (IsEditing || view.size != 3) return;
         _solveTask = null;
+        ClearSolution();
         view.FinishAll();
         Editor.Load(view.Model);
         IsEditing = true;
-        SolutionText = "";
         OnEditChanged();
     }
 
