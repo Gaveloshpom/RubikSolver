@@ -24,6 +24,11 @@ public class CubeView : MonoBehaviour
         new Color(0.05f, 0.30f, 0.80f), // B синій
     };
 
+    /// <summary>Колір незаповненої наліпки в режимі введення.</summary>
+    public static readonly Color EmptyColor = new Color(0.32f, 0.33f, 0.36f);
+
+    public static Color ColorOf(byte color) => color < Palette.Length ? Palette[color] : EmptyColor;
+
     private static readonly Vector3[] AxisVectors = { Vector3.right, Vector3.up, Vector3.back };
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
@@ -47,6 +52,8 @@ public class CubeView : MonoBehaviour
 
     private readonly List<Cubie> _cubies = new List<Cubie>();
     private readonly List<Sticker> _stickers = new List<Sticker>();
+    private readonly Dictionary<Collider, int> _stickerByCollider = new Dictionary<Collider, int>();
+    private byte[] _override; // якщо не null, показуємо ці наліпки замість моделі (режим введення)
     private readonly Queue<Move> _queue = new Queue<Move>();
     private readonly List<Cubie> _turning = new List<Cubie>();
     private MaterialPropertyBlock _block;
@@ -63,6 +70,9 @@ public class CubeView : MonoBehaviour
 
     /// <summary>Скільки ходів ще не завершено (включно з поточним).</summary>
     public int Pending => _queue.Count + (_animating ? 1 : 0);
+
+    /// <summary>Викликається після кожного перефарбування (хід завершено, новий стан, режим введення).</summary>
+    public event System.Action Repainted;
 
     private void Awake()
     {
@@ -87,9 +97,31 @@ public class CubeView : MonoBehaviour
     {
         if (cube.Size != size) Build(cube.Size);
         StopAnimation();
+        _queue.Clear();
         Model = cube.Clone();
+        _override = null;
         Repaint();
     }
+
+    /// <summary>Показує задані наліпки (значення поза 0..5 = порожня) замість моделі. Масив не копіюється.</summary>
+    public void ShowStickers(byte[] stickers)
+    {
+        _override = stickers;
+        Repaint();
+    }
+
+    /// <summary>Повертає показ стану моделі.</summary>
+    public void ShowModel()
+    {
+        _override = null;
+        Repaint();
+    }
+
+    /// <summary>Колір наліпки, яку зараз видно (з моделі або з режиму введення).</summary>
+    public byte DisplayedColor(int index) => _override != null ? _override[index] : Model.Stickers[index];
+
+    public bool TryGetStickerIndex(Collider collider, out int index) =>
+        _stickerByCollider.TryGetValue(collider, out index);
 
     public void ResetCube() => SetState(new Cube(size));
 
@@ -109,7 +141,9 @@ public class CubeView : MonoBehaviour
         for (int i = transform.childCount - 1; i >= 0; i--) Destroy(transform.GetChild(i).gameObject);
         _cubies.Clear();
         _stickers.Clear();
+        _stickerByCollider.Clear();
         _queue.Clear();
+        _override = null;
         _animating = false;
 
         if (stickerMaterial == null) stickerMaterial = CreateFallbackMaterial(Color.white);
@@ -161,7 +195,9 @@ public class CubeView : MonoBehaviour
             quad.transform.localScale = Vector3.one * 0.86f;
             var r = quad.GetComponent<Renderer>();
             r.sharedMaterial = stickerMaterial;
-            _stickers.Add(new Sticker { Renderer = r, Index = face * n * n + row * n + col });
+            int index = face * n * n + row * n + col;
+            _stickers.Add(new Sticker { Renderer = r, Index = index });
+            _stickerByCollider[quad.GetComponent<Collider>()] = index;
         }
 
         Model = new Cube(n);
@@ -200,12 +236,12 @@ public class CubeView : MonoBehaviour
 
     private void Repaint()
     {
-        var stickers = Model.Stickers;
         foreach (var s in _stickers)
         {
-            _block.SetColor(BaseColorId, Palette[stickers[s.Index]]);
+            _block.SetColor(BaseColorId, ColorOf(DisplayedColor(s.Index)));
             s.Renderer.SetPropertyBlock(_block);
         }
+        Repainted?.Invoke();
     }
 
     // ---------------------------------------------------------------- анімація

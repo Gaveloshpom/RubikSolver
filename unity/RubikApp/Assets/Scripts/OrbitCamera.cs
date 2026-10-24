@@ -16,6 +16,7 @@ public class OrbitCamera : MonoBehaviour
     public float smoothing = 12f;
 
     private float _yaw, _pitch, _distance;
+    private bool _dragging;
 
     private void Start()
     {
@@ -30,7 +31,15 @@ public class OrbitCamera : MonoBehaviour
         var mouse = Mouse.current;
         if (mouse != null)
         {
-            if (mouse.leftButton.isPressed || mouse.rightButton.isPressed)
+            var position = mouse.position.ReadValue();
+
+            // перетягування, що почалося над UI, камеру не крутить
+            if (mouse.leftButton.wasPressedThisFrame || mouse.rightButton.wasPressedThisFrame)
+                _dragging = !CubeUI.IsPointerOverUi(position);
+            if (!mouse.leftButton.isPressed && !mouse.rightButton.isPressed)
+                _dragging = false;
+
+            if (_dragging)
             {
                 var delta = mouse.delta.ReadValue();
                 yaw += delta.x * rotateSpeed;
@@ -38,7 +47,7 @@ public class OrbitCamera : MonoBehaviour
             }
 
             float scroll = mouse.scroll.ReadValue().y;
-            if (scroll != 0f)
+            if (scroll != 0f && !CubeUI.IsPointerOverUi(position))
                 distance = Mathf.Clamp(distance - scroll * zoomSpeed * distance, minDistance, maxDistance);
         }
 

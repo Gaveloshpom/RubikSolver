@@ -48,6 +48,22 @@ namespace Rubik.Core
             Reset();
         }
 
+        /// <summary>
+        /// Куб із готових наліпок (6*N*N значень 0..5, порядок як у <see cref="Stickers"/>).
+        /// Перевіряє тільки довжину й діапазон; чи такий куб можна зібрати — справа солвера.
+        /// </summary>
+        public static Cube FromStickers(int size, ReadOnlySpan<byte> stickers)
+        {
+            var c = new Cube(size);
+            if (stickers.Length != c._s.Length)
+                throw new ArgumentException($"Expected {c._s.Length} stickers, got {stickers.Length}.", nameof(stickers));
+            for (int i = 0; i < stickers.Length; i++)
+                if (stickers[i] > 5)
+                    throw new ArgumentException($"Sticker {i} has invalid color {stickers[i]}.", nameof(stickers));
+            stickers.CopyTo(c._s);
+            return c;
+        }
+
         public int Size => _n;
 
         /// <summary>Сирі наліпки тільки для читання (для рендера, солверів, тестів).</summary>

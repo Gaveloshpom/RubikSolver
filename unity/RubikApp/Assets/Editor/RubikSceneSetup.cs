@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 // Меню Rubik → Create Main Scene: створює Assets/Scenes/Main.unity з камерою, світлом і кубом.
 public static class RubikSceneSetup
@@ -43,9 +44,29 @@ public static class RubikSceneSetup
         var app = new GameObject("App").AddComponent<CubeAppController>();
         app.view = view;
 
+        var uiGo = new GameObject("UI");
+        var document = uiGo.AddComponent<UIDocument>();
+        document.panelSettings = LoadOrCreatePanelSettings();
+        uiGo.AddComponent<CubeUI>().app = app;
+
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
         Debug.Log($"[Rubik] Created {ScenePath}. Press Play.");
+    }
+
+    private static PanelSettings LoadOrCreatePanelSettings()
+    {
+        const string path = "Assets/UI/RubikPanelSettings.asset";
+        var settings = AssetDatabase.LoadAssetAtPath<PanelSettings>(path);
+        if (settings != null) return settings;
+
+        settings = ScriptableObject.CreateInstance<PanelSettings>();
+        settings.themeStyleSheet = AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>("Assets/UI/RubikTheme.tss");
+        settings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
+        settings.referenceResolution = new Vector2Int(1600, 900);
+        settings.match = 0.5f;
+        AssetDatabase.CreateAsset(settings, path);
+        return settings;
     }
 
     private static Material LoadOrCreateMaterial(string name, Color color, float smoothness)
