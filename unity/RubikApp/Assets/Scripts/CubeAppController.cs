@@ -19,6 +19,10 @@ public class CubeAppController : MonoBehaviour
     public int targetFrameRate = 60;
     [Tooltip("Mouse movement in pixels before a drag on a sticker turns its layer")]
     public float dragThreshold = 12f;
+    [Tooltip("Seconds the short (two-phase) search may take before falling back to the layer-by-layer solver")]
+    public float shortSearchSeconds = 4f;
+    [Tooltip("Same limit in the browser, where the search blocks the page")]
+    public float webShortSearchSeconds = 1.5f;
 
     private Task _tablesReady;
     private Task<List<Move>> _solveTask;
@@ -80,10 +84,15 @@ public class CubeAppController : MonoBehaviour
 
     private void Awake()
     {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // In the browser the frame rate follows requestAnimationFrame; -1 is the recommended value
+        Application.targetFrameRate = -1;
+#else
         // VSync keeps the frame rate at the monitor refresh rate instead of thousands of FPS;
         // targetFrameRate is the fallback when the driver forces VSync off.
         QualitySettings.vSyncCount = 1;
         Application.targetFrameRate = targetFrameRate;
+#endif
 
         // in Awake because the UI reads the speed in its own Start
         _normalSpeed = view.secondsPerTurn;
@@ -96,18 +105,54 @@ public class CubeAppController : MonoBehaviour
 
     private void Start()
     {
-        _tablesReady = Task.Run(() =>
+        _tablesReady = RunWork<object>(() =>
         {
             if (!PruningTables.IsInitialized) PruningTables.Initialize(new Cube(3));
-        });
+            return null;
+        }, waitForTables: false);
+        if (!_tablesReady.IsCompleted) SetStatus("status.loading");
 
         // a left drag that starts on the cube turns a layer instead of orbiting the camera
         var orbit = Camera.main != null ? Camera.main.GetComponent<OrbitCamera>() : null;
         if (orbit != null) orbit.capturesLeftDrag = p => !IsEditing && RaycastSticker(p, out _);
     }
 
+    /// <summary>
+    /// Runs heavy solver work off the UI. On desktop that is a thread-pool task; the browser has no
+    /// threads, so there it runs on the main thread a couple of frames later (after the status text
+    /// has been drawn). Either way the result comes back as a Task polled from Update.
+    /// </summary>
+    private Task<T> RunWork<T>(Func<T> work, bool waitForTables = true)
+    {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        var tcs = new TaskCompletionSource<T>();
+        StartCoroutine(RunOnMainThread(work, waitForTables, tcs));
+        return tcs.Task;
+#else
+        var tables = waitForTables ? _tablesReady : Task.CompletedTask;
+        return Task.Run(async () =>
+        {
+            await tables;
+            return work();
+        });
+#endif
+    }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+    private System.Collections.IEnumerator RunOnMainThread<T>(Func<T> work, bool waitForTables, TaskCompletionSource<T> tcs)
+    {
+        if (waitForTables)
+            while (!_tablesReady.IsCompleted) yield return null;
+        yield return null;
+        yield return null;
+        try { tcs.SetResult(work()); }
+        catch (Exception e) { tcs.SetException(e); }
+    }
+#endif
+
     private void Update()
     {
+        if (_statusKey == "status.loading" && _tablesReady.IsCompleted) SetStatus(null);
         if (!view.IsBusy) view.secondsPerTurn = _normalSpeed;
         PollSolve();
         if (IsPlaying && !view.IsBusy)
@@ -206,11 +251,14 @@ public class CubeAppController : MonoBehaviour
         ClearSolution();
         var start = view.Model.Clone();
         _solutionStart = start.Clone();
-        _solveTask = Task.Run(async () =>
-        {
-            await _tablesReady;
-            return KociembaSolver.Solve(start.Clone()) ?? LayerByLayerSolver.Solve(start.Clone());
-        });
+#if UNITY_WEBGL && !UNITY_EDITOR
+        var limit = TimeSpan.FromSeconds(webShortSearchSeconds);
+#else
+        var limit = TimeSpan.FromSeconds(shortSearchSeconds);
+#endif
+        // The two-phase search gives shorter solutions but can take long on some scrambles;
+        // the layer-by-layer solver is always fast
+        _solveTask = RunWork(() => KociembaSolver.Solve(start.Clone(), limit) ?? LayerByLayerSolver.Solve(start.Clone()));
         SetStatus("status.solving");
     }
 

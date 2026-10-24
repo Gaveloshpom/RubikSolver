@@ -15,8 +15,22 @@ Unity 6.6 (URP) app on top of `src/Rubik.Core` and `src/Rubik.Solver3x3`.
 
 - **Create Main Scene** — regenerates `Main.unity` (camera, light, cube, UI).
 - **Solver Smoke Test** — scrambles, solves and verifies a cube in the background, logs to Console.
-- **Apply Project Settings** — product name, windowed 1600x900, MSAA 4x.
-- **Build Windows** — applies the settings and builds `RubikApp/Builds/Windows/RubikSolver.exe`.
+- **Apply Project Settings** — product name, version, windowed 1600x900, MSAA 4x.
+- **Build Windows** — builds `RubikApp/Builds/Windows/RubikSolver.exe` for local testing.
+- **Build Release** — builds and zips `RubikApp/Builds/Release/RubikSolver-<version>-win64.zip` for GitHub Releases.
+- **Build Web** — builds the WebGL site into `RubikApp/Builds/Web` (gzip with decompression fallback, `Responsive` template).
+
+The version lives in `RubikBuild.Version` (`Assets/Editor/RubikBuild.cs`).
+
+## Publishing
+
+1. **Windows:** Rubik → Build Release, then create a GitHub release (tag `v<version>`), paste `RELEASE_NOTES.md`
+   and attach the zip.
+2. **Web:** Rubik → Build Web, then `powershell -ExecutionPolicy Bypass -File unity/publish-web.ps1 -Push`.
+   It commits the build to the `gh-pages` branch (via a temporary worktree) and pushes it.
+   In the GitHub repository settings, Pages must serve the `gh-pages` branch, root folder.
+
+In the browser there are no threads, so the solver runs on the main thread (`CubeAppController.RunWork`).
 
 ## Scripts
 

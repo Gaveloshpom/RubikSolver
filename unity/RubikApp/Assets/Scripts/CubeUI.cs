@@ -175,6 +175,12 @@ public class CubeUI : MonoBehaviour
         _hint.style.fontSize = 12;
         side.Add(_hint);
 
+        var version = new Label($"Rubik Solver v{Application.version}");
+        version.style.marginTop = 6;
+        version.style.color = new Color(0.45f, 0.47f, 0.5f);
+        version.style.fontSize = 11;
+        side.Add(version);
+
         BuildPlayer();
         RefreshNet();
         RefreshPanel();

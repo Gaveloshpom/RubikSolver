@@ -67,11 +67,11 @@ public static class Loc
         ["hint.play"] = new[]
         {
             "Mouse: drag a sticker to turn its layer, drag the background to orbit, wheel to zoom. " +
-            "Keys: U R F D L B, x y z (Shift = counter-clockwise), Space = scramble, Enter = solve, +/- = speed. " +
-            "Solution: ← → step, P play/pause, Home/End start/end.",
-            "Миша: тягни наліпку — крутити шар, тягни фон — обертати камеру, коліщатко — зум. " +
-            "Клавіші: U R F D L B, x y z (Shift — проти годинникової), Space — скрамбл, Enter — розв'язати, +/- — швидкість. " +
-            "Рішення: ← → — крок, P — грати/пауза, Home/End — початок/кінець.",
+            "\nKeys: U R F D L B, x y z (Shift = counter-clockwise), \nSpace = scramble, \nEnter = solve, \n+/- = speed. " +
+            "\nSolution: Left/Right arrow = step, \nP play/pause, \nHome/End start/end.",
+            "\nМиша: тягни наліпку — крутити шар, \nтягни фон — обертати камеру, \nколіщатко — зум. " +
+            "\nКлавіші: U R F D L B, x y z (Shift — проти годинникової), \nSpace — скрамбл, \nEnter — розв'язати, \n+/- — швидкість. " +
+            "\nРішення: стрілки вліво/вправо — крок, \nP — грати/пауза, \nHome/End — початок/кінець.",
         },
         ["hint.edit"] = new[]
         {
@@ -91,13 +91,14 @@ public static class Loc
         ["player.token"] = new[] { "Jump to the state after move {0}", "Перейти до стану після ходу {0}" },
 
         // status
-        ["status.reset"] = new[] { "Reset", "Скинуто" },
+        ["status.loading"] = new[] { "Loading the solver...", "Завантажую солвер..." },
+        ["status.reset"] =new[] { "Reset", "Скинуто" },
         ["status.scramble"] = new[] { "Scramble: {0}", "Скрамбл: {0}" },
         ["status.only3x3"] = new[] { "The solver supports 3x3 only", "Солвер підтримує тільки 3x3" },
         ["status.alreadySolved"] = new[] { "The cube is already solved", "Куб уже зібраний" },
         ["status.solving"] = new[] { "Searching for a solution...", "Шукаю рішення..." },
         ["status.solverError"] = new[] { "Solver error (see Console)", "Помилка солвера (див. Console)" },
-        ["status.solution"] = new[] { "Solution: {0} moves. Press Play or → to step", "Рішення: {0} ходів. «Грати» або → — крок" },
+        ["status.solution"] = new[] { "Solution: {0} moves. Press Play or the Right arrow to step", "Рішення: {0} ходів. «Грати» або стрілка вправо — крок" },
         ["status.entered"] = new[] { "Cube entered, ready to solve", "Куб введено — можна розв'язувати" },
 
         // validation (CubeEditor)

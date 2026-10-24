@@ -1,112 +1,132 @@
-# RubikSolver
+# Rubik Solver
 
-Рушій кубика Рубика NxN на C#, розрахований на подальше масштабування.
+Enter your Rubik's cube (3x3) and get a step-by-step solution on an animated 3D cube.
+Under the hood: an NxN Rubik's cube engine in C#, designed to scale to bigger cubes.
 
-## Структура
+- **Windows:** download `RubikSolver-1.0.0-win64.zip` from [Releases](https://github.com/Gaveloshpom/RubikSolver/releases), unzip it and run `RubikSolver.exe`. No install needed.
+- **Web:** <https://gaveloshpom.github.io/RubikSolver/> (desktop browser with a mouse and keyboard).
+
+## App features
+
+- 3D cube: turn layers by dragging stickers with the mouse or with the keyboard (U R F D L B, x y z).
+- Enter your own cube on the net or directly on the 3D cube; the app checks that the cube can actually be solved.
+- Two-phase (Kociemba-style) solver with a layer-by-layer fallback.
+- Solution player: step forward/back, play/pause, jump to any move, adjustable speed.
+- English and Ukrainian UI, adjustable UI size.
+
+The Unity app lives in `unity/RubikApp`; see [unity/README.md](unity/README.md) for building and publishing.
+
+## Structure
 
 ```
-src/Rubik.Core/        Основна бібліотека (netstandard2.1 — сумісна з Unity)
-src/Rubik.Solver3x3/   Пошаровий солвер для 3×3 (netstandard2.1)
-src/Rubik.Cli/         Консольний застосунок: скрамбл, ручні ходи, --solve
+src/Rubik.Core/        Core library (netstandard2.1, Unity compatible)
+src/Rubik.Solver3x3/   3x3 solvers and the solvability check (netstandard2.1)
+src/Rubik.Cli/         Console app: scramble, manual moves, --solve
+unity/RubikApp/        Unity 6.6 (URP) app
 
-tests/Rubik.Tests/              Реальні xunit-тести Core (потребують NuGet)
-tests/Rubik.Tests.Offline/      Ті самі тести Core без NuGet-залежностей
-tests/Rubik.Solver3x3.Tests/    Масовий регресійний тест солвера (1000 скремблів)
+tests/Rubik.Tests/              Real xunit tests for Core (need NuGet)
+tests/Rubik.Tests.Offline/      The same Core tests without NuGet dependencies
+tests/Rubik.Solver3x3.Tests/    Mass solver regression test + validator tests
 ```
 
-`tests/Rubik.Tests.Offline` існує лише тому, що середовище, в якому це писалося,
-не мало доступу до nuget.org. Файли `CubeTests.cs` і `NotationTests.cs` там —
-буквальні копії файлів з `tests/Rubik.Tests` (лише namespace інший). Коли будете
-збирати проєкт локально з доступом до NuGet, просто користуйтесь
-`tests/Rubik.Tests` і сміливо видаліть `Rubik.Tests.Offline`.
+`tests/Rubik.Tests.Offline` exists only because the environment this was first written in
+had no access to nuget.org. Its `CubeTests.cs` and `NotationTests.cs` are literal copies of the
+files in `tests/Rubik.Tests` (only the namespace differs). When building locally with NuGet access,
+just use `tests/Rubik.Tests` and feel free to delete `Rubik.Tests.Offline`.
 
-Проєкти без зовнішніх залежностей (`Rubik.Core`, `Rubik.Solver3x3`, `Rubik.Cli`,
-`Rubik.Tests.Offline`, `Rubik.Solver3x3.Tests`) мають власний `nuget.config`
-з порожнім списком джерел — це лише зручність для офлайн-збірки в тому
-середовищі, де це писалось, безпечно видалити.
+The projects without external dependencies (`Rubik.Core`, `Rubik.Solver3x3`, `Rubik.Cli`,
+`Rubik.Tests.Offline`, `Rubik.Solver3x3.Tests`) have their own `nuget.config` with an empty source
+list; that was only a convenience for offline builds and is safe to delete.
 
-## Збірка і запуск
+## Build and run
 
 ```bash
 dotnet build
 dotnet run --project src/Rubik.Cli -- -n 3 -s 20 --seed 42 --solve
-dotnet test tests/Rubik.Tests                       # якщо є доступ до NuGet
-dotnet run --project tests/Rubik.Tests.Offline      # якщо немає
-dotnet run --project tests/Rubik.Solver3x3.Tests -c Release   # 1000-скрембловий тест солвера
+dotnet test tests/Rubik.Tests                       # with NuGet access
+dotnet run --project tests/Rubik.Tests.Offline      # without it
+dotnet run --project tests/Rubik.Solver3x3.Tests -c Release   # mass solver test
 ```
 
-## Ключові рішення Core
+For the Unity app, build the solver DLLs into the project first
+(`powershell -ExecutionPolicy Bypass -File unity/sync-solver.ps1`), then open `unity/RubikApp`
+in Unity 6000.6.3f1.
 
-- **Наліпки, не кубики.** `byte[6*N*N]`, індекс `face*N*N + row*N + col`.
-  Для N=1000 це 6 МБ — прийнятно.
-- **Один клас `Move` на все**: `(Axis, LayerFrom, LayerTo, Turns)`. Зовнішня грань,
-  внутрішній зріз, широкий хід (`3Rw`) і навіть поворот усього куба (`x/y/z`) —
-  окремі випадки одного й того ж діапазону шарів. Це і є відповідь на питання
-  "як перевикористати код 3×3 для NxN" — жодного окремого шляху немає, весь
-  рушій уже написаний для довільного N.
-- **Геометрія як єдине джерело істини.** Кожна наліпка має цілі 3D-координати
-  (подвоєні й центровані, тому парність/непарність N не створює дробів).
-  Поворот на 90° — точна цілочисельна ротаційна матриця. Це усуває цілий клас
-  помилок "переплутав індекс рядка/стовпця на конкретній грані", які типові
-  для ручних таблиць перестановок.
-- **`IsSolved`** перевіряє "кожна грань одноколірна і всі 6 кольорів різні",
-  а не порівнює з еталоном — коректно для парних N (без нерухомих центрів) і
-  для куба, повернутого в просторі.
-- **Нотація** (`R U R' U' 2R 3Rw2 x M E S`) парситься в `List<Move>` і назад
-  форматується — придатно і для читання скремблів, і для запису розв'язків.
+## Core design decisions
 
-### Перевірено тестами (`tests/Rubik.Tests` / `Rubik.Tests.Offline`, 79 тестів)
+- **Stickers, not cubies.** `byte[6*N*N]`, index `face*N*N + row*N + col`.
+  For N=1000 that is 6 MB, which is acceptable.
+- **One `Move` type for everything**: `(Axis, LayerFrom, LayerTo, Turns)`. An outer face,
+  an inner slice, a wide move (`3Rw`) and even a whole-cube rotation (`x/y/z`) are all
+  special cases of the same layer range. That is the answer to "how to reuse the 3x3 code
+  for NxN": there is no separate path, the whole engine is already written for any N.
+- **Geometry as the single source of truth.** Every sticker has integer 3D coordinates
+  (doubled and centred, so odd/even N never creates fractions). A 90° turn is an exact
+  integer rotation matrix. This removes a whole class of "mixed up the row/column index
+  on a particular face" bugs that are typical of hand-written permutation tables.
+- **`IsSolved`** checks "every face has one color and all 6 colors differ" instead of
+  comparing with a reference, which is correct for even N (no fixed centres) and for a cube
+  rotated in space.
+- **Notation** (`R U R' U' 2R 3Rw2 x M E S`) is parsed into a `List<Move>` and formatted back,
+  suitable both for reading scrambles and for writing solutions.
 
-Скрамбл 50 ходів + інверсія → точний збіг з розв'язаним кубом (N=1..25);
-4 чверті = ідентичність; напрямки всіх 6 граней звірені вручну з фізичним
-кубом; порядок sexy move = 6; ко- і некомутативність шарів; інваріант
-кількості наліпок кожного кольору; парсер нотації (усі формати + помилкові
-токени); `Simplify`/`Invert` не змінюють стан куба.
+### Covered by tests (`tests/Rubik.Tests` / `Rubik.Tests.Offline`, 79 tests)
 
-## Rubik.Solver3x3: пошаровий (LBL) солвер для 3×3
+50-move scramble + inverse → exact match with the solved cube (N=1..25);
+4 quarter turns = identity; the directions of all 6 faces checked by hand against a physical
+cube; order of the sexy move = 6; commuting and non-commuting layers; invariant number of
+stickers of each color; notation parser (all formats + invalid tokens); `Simplify`/`Invert`
+do not change the cube state.
 
-`LayerByLayerSolver.Solve(Cube cube)` повертає `List<Move>`, що розв'язує
-скремблений 3×3 куб. П'ять фаз, кожна перевіряється на реальному кубі, а не
-приймається на віру:
+## Rubik.Solver3x3
 
-1. **Хрест** і **2. Кути першого шару** — шукаються малим BFS-пошуком
-   (`ConstrainedSearch`) напряму по справжньому кубу з обмеженим набором ходів
-   (щоб не вибухнути комбінаторно) — жодних заздалегідь виписаних формул.
-2. **Ребра другого шару** — два класичні алгоритми вставки
-   (`U R U' R' U' F' U F` і дзеркальний), перебираються у різних поворотах U,
-   приймається лише той варіант, що дійсно дає правильний результат на кубі.
-3. **OLL** (орієнтація останнього шару) — `F R U R' U' F'` для ребер,
-   Sune (`R U R' U R U2 R'`) для кутів, повторюються з поворотами U між
-   застосуваннями, поки ціль не досягнута.
-4. **PLL** (перестановка останнього шару) — Aa-perm (чистий 3-цикл кутів) і
-   Ua-perm (чистий 3-цикл ребер): обидва спершу знайдені й перевірені пошуком
-   від розв'язаного куба, а не взяті з пам'яті без перевірки.
+### Two-phase solver
 
-Важливий нюанс, знайдений через масове тестування, а не одиничний приклад:
-скремблер використовує й ходи середнього шару, які фізично переставляють
-кольори центрів між гранями (як на справжньому кубику). Тому солвер працює не
-з фіксованим "D завжди колір 3", а читає **поточний** колір кожного центру на
-початку розв'язання (`ColorAt`) і шукає деталі за цими кольорами; позиції
-граней (для запису ходів) лишаються фіксованими окремо.
+`KociembaSolver.Solve(Cube cube)` reduces the cube to the subgroup G1 (phase 1, all face turns)
+and then solves it with U, D and half turns of R, L, F, B (phase 2), using pruning tables from
+`PruningTables`. It returns `null` if the cube is too scrambled for its depth limits; the app then
+falls back to the layer-by-layer solver.
 
-### Перевірено тестами (`tests/Rubik.Solver3x3.Tests`)
+`CubeValidator.Validate` checks whether a sticker state is solvable at all: color counts,
+valid corners and edges, corner twist, edge flip and permutation parity.
 
-**1000/1000** випадкових скремблів розв'язано вірно — довжини 0, 1, 2, 3, 5, 8,
-15, 25, 50, 100 ходів, по 100 сідів кожна, перевірка через `Cube.IsSolved` на
-реальному рушії після застосування знайденого розв'язку. ~19 мс на
-розв'язання. Довжина розв'язку не оптимізована (в середньому ~100 ходів,
-до ~190 у гіршому випадку) — це очікувано для простого пошарового методу без
-оптимізації довжини.
+### Layer-by-layer (LBL) solver
 
-## Продуктивність Core (орієнтовно, цей контейнер)
+`LayerByLayerSolver.Solve(Cube cube)` returns a `List<Move>` that solves a scrambled 3x3 cube.
+Five phases, each one checked on the real cube rather than taken on faith:
 
-Куб 100×100, 500 випадкових ходів: ~150 мс разом зі стартом .NET.
-Хід на крайньому шарі — O(N²) (через саму грань), зріз — O(N).
+1. **Cross** and **2. First-layer corners**: found by a small BFS (`ConstrainedSearch`)
+   directly on the real cube with a restricted move set (to avoid a combinatorial explosion),
+   with no pre-written formulas.
+3. **Second-layer edges**: two classic insertion algorithms
+   (`U R U' R' U' F' U F` and its mirror), tried with different U turns; only a variant that
+   really gives the right result on the cube is accepted.
+4. **OLL** (orientation of the last layer): `F R U R' U' F'` for edges, Sune
+   (`R U R' U R U2 R'`) for corners, repeated with U turns in between until the goal is reached.
+5. **PLL** (permutation of the last layer): Aa-perm (a pure 3-cycle of corners) and
+   Ua-perm (a pure 3-cycle of edges); both were first found and verified by a search from the
+   solved cube rather than taken from memory unchecked.
 
-## Далі за планом
+An important detail found through mass testing rather than a single example: the scrambler
+may use middle-layer moves, which physically move the centre colors between faces (as on a real
+cube). So the solver does not assume "D is always color 3"; it reads the **current** color of
+every centre at the start (`ColorAt`) and looks for pieces by those colors, while face positions
+(for writing moves) stay fixed separately.
 
-1. ~~Алгоритм 3×3 (MVP)~~ — готово, пошаровий метод, 1000/1000 на тестах.
-   Наступний крок тут — скоротити довжину розв'язку (two-phase Кочемби або
-   бодай повний набір OLL/PLL кейсів замість повторюваних Sune/Ua-perm).
-2. Комутатори для NxN, з парностями (OLL/PLL parity) для парних N.
-3. Unity: винести Core в окрему asmdef/DLL, анімація через чергу ходів.
+### Covered by tests (`tests/Rubik.Solver3x3.Tests`)
+
+1000 random scrambles of 0, 1, 2, 3, 5, 8, 15, 25, 50 and 100 moves (100 seeds each) are solved
+and checked with `Cube.IsSolved` on the real engine, plus 800 validator checks (valid scrambles
+and deliberately flipped, twisted or swapped pieces). The LBL solution length is not optimized
+(about 64 moves on average, up to ~180), which is expected for a simple layer-by-layer method.
+
+## Core performance (rough)
+
+A 100x100 cube with 500 random moves: ~150 ms including .NET startup.
+A move on an outer layer is O(N²) (because of the face itself), a slice is O(N).
+
+## Roadmap
+
+1. ~~3x3 algorithm (MVP)~~: done (layer-by-layer + two-phase).
+2. Commutators for NxN, with parities (OLL/PLL parity) for even N.
+3. ~~Unity: Core as a DLL, animation through a move queue~~: done, see `unity/`.

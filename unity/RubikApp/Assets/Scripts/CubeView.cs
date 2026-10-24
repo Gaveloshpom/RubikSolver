@@ -37,6 +37,8 @@ public class CubeView : MonoBehaviour
     [Range(0.03f, 1f)] public float secondsPerTurn = 0.25f;
     public Material stickerMaterial;
     public Material bodyMaterial;
+    [Tooltip("Use the simple Rubik/WebLit shader instead of the materials above. Always on in web builds; turn on to preview that look in the editor.")]
+    public bool useWebShader;
 
     private class Cubie
     {
@@ -196,6 +198,10 @@ public class CubeView : MonoBehaviour
         _override = null;
         _animating = false;
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+        useWebShader = true;
+#endif
+        if (useWebShader) UseWebShader();
         if (stickerMaterial == null) stickerMaterial = CreateFallbackMaterial(Color.white);
         if (bodyMaterial == null) bodyMaterial = CreateFallbackMaterial(new Color(0.06f, 0.06f, 0.07f));
 
@@ -303,6 +309,22 @@ public class CubeView : MonoBehaviour
         mesh.SetTriangles(triangles, 0);
         mesh.RecalculateBounds();
         return mesh;
+    }
+
+    /// <summary>Swaps the materials for ones using Rubik/WebLit (see the shader for why the web needs it).</summary>
+    private void UseWebShader()
+    {
+        var shader = Resources.Load<Shader>("RubikWebLit");
+        if (shader == null || !shader.isSupported)
+        {
+            Debug.LogWarning("[Rubik] Rubik/WebLit shader is not available, keeping the default materials");
+            return;
+        }
+        var bodyColor = bodyMaterial != null ? bodyMaterial.GetColor(BaseColorId) : new Color(0.06f, 0.06f, 0.07f);
+        stickerMaterial = new Material(shader) { name = "StickerWeb" };
+        bodyMaterial = new Material(shader) { name = "CubeBodyWeb" };
+        bodyMaterial.SetColor(BaseColorId, bodyColor);
+        bodyMaterial.SetFloat("_Specular", 0.05f);
     }
 
     private static Material CreateFallbackMaterial(Color color)
