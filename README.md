@@ -87,3 +87,5 @@ The `Rubik` menu in the editor builds the Windows zip and the web version; [unit
 ## License
 
 [MIT](LICENSE.txt)
+
+The app's UI font is [Inter](https://github.com/rsms/inter), licensed under the SIL Open Font License 1.1 ([license](unity/RubikApp/Assets/Resources/Fonts/Inter-LICENSE.txt)).
