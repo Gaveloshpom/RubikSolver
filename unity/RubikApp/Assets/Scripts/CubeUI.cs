@@ -29,6 +29,11 @@ public class CubeUI : MonoBehaviour
 
     private static CubeUI _instance;
 
+    // The web build has no system fonts to fall back on, so the default UI font shows no Cyrillic.
+    // Inter (SIL OFL, Resources/Fonts) covers Latin and Cyrillic and is set on every text element.
+    private static FontDefinition _font;
+    private static bool _fontLoaded;
+
     // Below this panel width (in UI units) the layout switches to compact: the panel spans the
     // screen width and collapses behind a Menu button (phones in portrait, narrow windows)
     private const float CompactWidth = 760f;
@@ -74,6 +79,7 @@ public class CubeUI : MonoBehaviour
         _compact = IsCompact();
 
         _root = document.rootVisualElement;
+        LoadFont();
         _root.pickingMode = PickingMode.Ignore;
         Rebuild();
         app.view.Repainted += RefreshNet;
@@ -241,6 +247,7 @@ public class CubeUI : MonoBehaviour
         _collapsible.Add(version);
 
         BuildPlayer();
+        ApplyFont(_root);
         RefreshNet();
         RefreshPanel();
     }
@@ -342,6 +349,22 @@ public class CubeUI : MonoBehaviour
             _tokenLabels.Add(token);
             _tokens.Add(token);
         }
+        ApplyFont(_tokens);
+    }
+
+    private static void LoadFont()
+    {
+        if (_fontLoaded) return;
+        _fontLoaded = true;
+        var font = Resources.Load<Font>("Fonts/Inter-Regular");
+        if (font != null) _font = FontDefinition.FromFont(font);
+        else Debug.LogWarning("[Rubik] Fonts/Inter-Regular not found, Cyrillic may not render in the web build");
+    }
+
+    private static void ApplyFont(VisualElement container)
+    {
+        if (_font.font == null) return;
+        container.Query<TextElement>().ForEach(e => e.style.unityFontDefinition = _font);
     }
 
     private VisualElement BuildNet()
