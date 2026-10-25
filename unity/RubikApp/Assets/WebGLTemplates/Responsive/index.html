@@ -6,7 +6,9 @@
   <title>{{{ PRODUCT_NAME }}}</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #1f2126; }
-    #unity-canvas { display: block; width: 100%; height: 100%; background: #1f2126; outline: none; }
+    /* touch-action: none keeps the browser from scrolling or zooming the page while the cube is dragged */
+    #unity-canvas { display: block; width: 100%; height: 100%; background: #1f2126; outline: none; touch-action: none; }
+    html, body { touch-action: none; -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
     #loading {
       position: absolute; inset: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 14px;

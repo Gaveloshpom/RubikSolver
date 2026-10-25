@@ -334,14 +334,15 @@ public class CubeAppController : MonoBehaviour
         if (key.wasPressedThisFrame) ManualMove(Notation.Parse(prime ? move + "'" : move, view.size));
     }
 
-    /// <summary>Drag on a sticker of the 3D cube: once the mouse moves far enough, turn that layer.</summary>
+    /// <summary>Drag on a sticker of the 3D cube (mouse or finger): once it moves far enough, turn that layer.</summary>
     private void HandleMouseTurns()
     {
-        var mouse = Mouse.current;
-        if (mouse == null) return;
-        var position = mouse.position.ReadValue();
+        var pointer = PointerInput.Current;
+        if (pointer == null) return;
+        if (PointerInput.ActiveTouches >= 2) { _dragSticker = null; return; } // pinch zoom, not a turn
+        var position = pointer.position.ReadValue();
 
-        if (mouse.leftButton.wasPressedThisFrame)
+        if (pointer.press.wasPressedThisFrame)
         {
             _dragSticker = null;
             if (!CubeUI.IsPointerOverUi(position) && RaycastSticker(position, out var hit))
@@ -350,11 +351,11 @@ public class CubeAppController : MonoBehaviour
                 _pressPosition = position;
             }
         }
-        if (!mouse.leftButton.isPressed) _dragSticker = null;
+        if (!pointer.press.isPressed) _dragSticker = null;
         if (_dragSticker == null) return;
 
         var delta = position - _pressPosition;
-        if (delta.magnitude < dragThreshold) return;
+        if (delta.magnitude < dragThreshold * ScreenScale) return;
 
         if (view.TryGetDragMove(_dragSticker, delta, Camera.main, out var move))
             ManualMove(new[] { move });
@@ -436,19 +437,23 @@ public class CubeAppController : MonoBehaviour
             if (kb.escapeKey.wasPressedThisFrame) CancelEdit();
         }
 
-        // a click (without dragging) on a sticker of the 3D cube paints it
-        var mouse = Mouse.current;
-        if (mouse == null) return;
-        var position = mouse.position.ReadValue();
-        if (mouse.leftButton.wasPressedThisFrame)
+        // a click or tap (without dragging) on a sticker of the 3D cube paints it
+        var pointer = PointerInput.Current;
+        if (pointer == null) return;
+        var position = pointer.position.ReadValue();
+        if (pointer.press.wasPressedThisFrame)
         {
             _pressPosition = position;
             _pressOverUi = CubeUI.IsPointerOverUi(position);
         }
-        if (mouse.leftButton.wasReleasedThisFrame && !_pressOverUi && (position - _pressPosition).sqrMagnitude < 36f &&
+        float tapRadius = 6f * ScreenScale;
+        if (pointer.press.wasReleasedThisFrame && !_pressOverUi && (position - _pressPosition).sqrMagnitude < tapRadius * tapRadius &&
             RaycastSticker(position, out var hit) && view.TryGetStickerIndex(hit.collider, out int index))
             PaintSticker(index);
     }
+
+    /// <summary>Pixel thresholds are tuned for a 900 px tall screen; dense phone screens need bigger ones.</summary>
+    private static float ScreenScale => Mathf.Max(1f, Screen.height / 900f);
 
     private void SetStatus(string key, params object[] args)
     {

@@ -63,6 +63,14 @@ public static class Loc
         ["btn.done"] = new[] { "Done", "Готово" },
         ["btn.clear"] = new[] { "Clear", "Очистити" },
         ["btn.cancel"] = new[] { "Cancel", "Скасувати" },
+        ["btn.menu"] = new[] { "Menu", "Меню" },
+        ["btn.hideMenu"] = new[] { "Hide menu", "Сховати меню" },
+
+        ["hint.touch"] = new[]
+        {
+            "Drag a sticker to turn its layer, \ndrag the background to rotate the cube, \npinch to zoom.",
+            "Тягни наліпку — крутити шар, \nтягни фон — обертати куб, \nдва пальці — зум.",
+        },
 
         ["hint.play"] = new[]
         {

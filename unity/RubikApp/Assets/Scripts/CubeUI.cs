@@ -29,10 +29,17 @@ public class CubeUI : MonoBehaviour
 
     private static CubeUI _instance;
 
+    // Below this panel width (in UI units) the layout switches to compact: the panel spans the
+    // screen width and collapses behind a Menu button (phones in portrait, narrow windows)
+    private const float CompactWidth = 760f;
+
     private VisualElement _root;
     private PanelSettings _panelSettings;
-    private Vector2Int _baseReferenceResolution;
-    private float _scale = 1f;
+    private float _scale = 1f;          // user's UI size multiplier
+    private Vector2Int _screenSize;
+    private bool _compact, _menuOpen;
+    private Button _menuButton;
+    private readonly List<VisualElement> _collapsible = new List<VisualElement>();
 
     private readonly VisualElement[] _cells = new VisualElement[CubeEditor.StickerCount];
     private readonly VisualElement[] _swatches = new VisualElement[6];
@@ -61,9 +68,10 @@ public class CubeUI : MonoBehaviour
 
         // work on a copy so changing the UI size does not modify the asset
         _panelSettings = Instantiate(document.panelSettings);
+        _panelSettings.scaleMode = PanelScaleMode.ConstantPixelSize;
         document.panelSettings = _panelSettings;
-        _baseReferenceResolution = _panelSettings.referenceResolution;
         SetScale(PlayerPrefs.GetFloat(ScalePrefsKey, 1f), save: false);
+        _compact = IsCompact();
 
         _root = document.rootVisualElement;
         _root.pickingMode = PickingMode.Ignore;
@@ -88,12 +96,44 @@ public class CubeUI : MonoBehaviour
     private void SetScale(float scale, bool save = true)
     {
         _scale = Mathf.Clamp(Mathf.Round(scale / ScaleStep) * ScaleStep, MinScale, MaxScale);
-        // ScaleWithScreenSize: a smaller reference resolution makes everything bigger
-        _panelSettings.referenceResolution = Vector2Int.RoundToInt((Vector2)_baseReferenceResolution / _scale);
+        ApplyScale();
         if (_scaleValue != null) _scaleValue.text = $"{_scale * 100f:0}%";
-        if (!save) return;
-        PlayerPrefs.SetFloat(ScalePrefsKey, _scale);
-        PlayerPrefs.Save();
+        if (save)
+        {
+            PlayerPrefs.SetFloat(ScalePrefsKey, _scale);
+            PlayerPrefs.Save();
+        }
+        if (_root != null && IsCompact() != _compact) { _compact = !_compact; Rebuild(); }
+    }
+
+    /// <summary>
+    /// UI scale from the screen size: 1.0 on a 1600x900 window, and on a phone in portrait the
+    /// screen is about 440 units wide, so the panel fits across it. Times the user's multiplier.
+    /// </summary>
+    private void ApplyScale()
+    {
+        _screenSize = new Vector2Int(Screen.width, Screen.height);
+        float baseScale = Mathf.Clamp(Mathf.Min(Screen.width / 440f, Screen.height / 900f), 0.5f, 4f);
+        _panelSettings.scale = baseScale * _scale;
+    }
+
+    private bool IsCompact() => Screen.width / _panelSettings.scale < CompactWidth;
+
+    private void Update()
+    {
+        // window resized or phone rotated
+        if (_screenSize.x == Screen.width && _screenSize.y == Screen.height) return;
+        ApplyScale();
+        bool compact = IsCompact();
+        if (compact == _compact) return;
+        _compact = compact;
+        Rebuild();
+    }
+
+    private void ToggleMenu()
+    {
+        _menuOpen = !_menuOpen;
+        RefreshPanel();
     }
 
     // ---------------------------------------------------------------- building
@@ -102,19 +142,36 @@ public class CubeUI : MonoBehaviour
     private void Rebuild()
     {
         _root.Clear();
+        _collapsible.Clear();
+        _menuButton = null;
         _tokensVersion = -1;
+        float margin = _compact ? 8 : 16;
 
         var side = Panel();
         side.style.position = Position.Absolute;
-        side.style.left = 16;
-        side.style.top = 16;
+        side.style.left = margin;
+        side.style.top = margin;
         _root.Add(side);
 
-        side.Add(BuildSettingsRow());
-        side.Add(Title(Loc.T("net.title")));
+        if (_compact)
+        {
+            // phones: the panel spans the width; everything but the main buttons hides behind Menu
+            side.style.right = margin;
+            _menuButton = MakeButton("", ToggleMenu);
+            _menuButton.style.alignSelf = Align.FlexStart;
+            side.Add(_menuButton);
+        }
+
+        var settings = BuildSettingsRow();
+        var title = Title(Loc.T("net.title"));
         var net = BuildNet();
+        side.Add(settings);
+        side.Add(title);
         side.Add(net);
-        side.style.width = net.style.width.value.value + 24; // + panel padding
+        _collapsible.Add(settings);
+        _collapsible.Add(title);
+        _collapsible.Add(net);
+        if (!_compact) side.style.width = net.style.width.value.value + 24; // + panel padding
 
         _palette = new VisualElement();
         _palette.style.flexDirection = FlexDirection.Row;
@@ -174,12 +231,14 @@ public class CubeUI : MonoBehaviour
         _hint.style.color = new Color(0.6f, 0.62f, 0.66f);
         _hint.style.fontSize = 12;
         side.Add(_hint);
+        _collapsible.Add(_hint);
 
         var version = new Label($"Rubik Solver v{Application.version}");
         version.style.marginTop = 6;
         version.style.color = new Color(0.45f, 0.47f, 0.5f);
         version.style.fontSize = 11;
         side.Add(version);
+        _collapsible.Add(version);
 
         BuildPlayer();
         RefreshNet();
@@ -226,9 +285,10 @@ public class CubeUI : MonoBehaviour
     {
         _solutionPanel = Panel();
         _solutionPanel.style.position = Position.Absolute;
-        _solutionPanel.style.left = 16;
-        _solutionPanel.style.right = 16;
-        _solutionPanel.style.bottom = 16;
+        float margin = _compact ? 8 : 16;
+        _solutionPanel.style.left = margin;
+        _solutionPanel.style.right = margin;
+        _solutionPanel.style.bottom = margin;
         _root.Add(_solutionPanel);
 
         var header = Row();
@@ -415,9 +475,18 @@ public class CubeUI : MonoBehaviour
             SetBorder(_swatches[c], c == app.Editor.SelectedColor ? 3 : 0, Color.white);
 
         _status.text = app.Status;
-        _hint.text = Loc.T(editing ? "hint.edit" : "hint.play");
+        _hint.text = Loc.T(editing ? "hint.edit" : PointerInput.IsTouchDevice ? "hint.touch" : "hint.play");
 
-        Show(_speedRow, !editing);
+        // compact layout: details only when the menu is open (or while entering a cube, which needs the net)
+        bool details = !_compact || _menuOpen || editing;
+        foreach (var e in _collapsible) Show(e, details);
+        if (_menuButton != null)
+        {
+            Show(_menuButton, _compact && !editing);
+            _menuButton.text = Loc.T(_menuOpen ? "btn.hideMenu" : "btn.menu");
+        }
+
+        Show(_speedRow, details && !editing);
         _speed.SetValueWithoutNotify(app.TurnsPerSecond);
         _speedValue.text = Loc.T("speed.value", app.TurnsPerSecond);
 
