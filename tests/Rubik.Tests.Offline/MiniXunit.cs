@@ -5,10 +5,10 @@ using System.Reflection;
 
 namespace Xunit
 {
-    // Мінімальна заміна xunit API (Fact/Theory/InlineData/Assert), достатня для наших тестів.
-    // Використовується лише тому, що nuget.org недоступний у цьому контейнері.
-    // На машині з доступом до NuGet просто підключіть справжній xunit — вихідний код тестів
-    // не зміниться (тут той самий namespace Xunit).
+    // Minimal stand-in for the xunit API (Fact/Theory/InlineData/Assert), enough for these tests.
+    // Used only because nuget.org was not reachable in the container where the tests were written.
+    // On a machine with NuGet access just reference the real xunit: the test sources
+    // stay the same (this is the same Xunit namespace).
 
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class FactAttribute : Attribute { }
@@ -67,7 +67,7 @@ namespace Xunit
         private static string Escape(string s) => s?.Replace("\n", "\\n") ?? "<null>";
     }
 
-    /// <summary>Рефлексією знаходить [Fact]/[Theory] у складці й виконує їх, друкуючи підсумок.</summary>
+    /// <summary>Finds [Fact]/[Theory] in the assembly via reflection, runs them and prints a summary.</summary>
     public static class MiniRunner
     {
         public static int RunAll(Assembly asm)

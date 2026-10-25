@@ -3,12 +3,12 @@ using System;
 namespace Rubik.Core
 {
     /// <summary>
-    /// Хід: діапазон сусідніх шарів [LayerFrom..LayerTo] вздовж осі, що повертається
-    /// разом на Turns чвертей за годинниковою стрілкою, якщо дивитися з ДОДАТНОГО боку осі
-    /// (з грані R, U або F).
+    /// A move: a range of adjacent layers [LayerFrom..LayerTo] along an axis, turned
+    /// together by Turns clockwise quarter turns, looking from the POSITIVE side of the axis
+    /// (from face R, U or F).
     ///
-    /// Один механізм описує все: зовнішню грань (R), внутрішній зріз (2R), широкий хід (3Rw)
-    /// і поворот усього куба (x, y, z).
+    /// One mechanism covers everything: an outer face (R), an inner slice (2R), a wide move (3Rw)
+    /// and a whole-cube rotation (x, y, z).
     /// </summary>
     public readonly struct Move : IEquatable<Move>
     {
@@ -16,7 +16,7 @@ namespace Rubik.Core
         public int LayerFrom { get; }
         public int LayerTo { get; }
 
-        /// <summary>Кількість чвертей, 0..3 (нормалізується за модулем 4).</summary>
+        /// <summary>Number of quarter turns, 0..3 (normalized modulo 4).</summary>
         public int Turns { get; }
 
         public Move(Axis axis, int layerFrom, int layerTo, int turns)

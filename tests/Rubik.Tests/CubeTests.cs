@@ -7,7 +7,7 @@ namespace Rubik.Tests
 {
     public class CubeTests
     {
-        // ------------------------------------------------------------ допоміжне
+        // ------------------------------------------------------------ helpers
 
         private static Cube Scrambled(int n, int length, int seed)
         {
@@ -16,7 +16,7 @@ namespace Rubik.Tests
             return c;
         }
 
-        /// <summary>Чи вся смужка (рядок або стовпець) грані має колір expected.</summary>
+        /// <summary>Whether the whole strip (row or column) of the face has the expected color.</summary>
         private static bool Line(Cube c, Face face, bool isRow, int index, Face expected)
         {
             for (int i = 0; i < c.Size; i++)
@@ -44,7 +44,7 @@ namespace Rubik.Tests
             return c;
         }
 
-        // ------------------------------------------------------------ базові властивості
+        // ------------------------------------------------------------ basic properties
 
         [Theory]
         [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)]
@@ -79,7 +79,7 @@ namespace Rubik.Tests
             for (int i = 0; i < 6; i++) Assert.Equal(n * n, counts[i]);
         }
 
-        // ------------------------------------------------------------ головний тест із плану
+        // ------------------------------------------------------------ the main test from the plan
 
         [Theory]
         [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)]
@@ -94,7 +94,7 @@ namespace Rubik.Tests
                 c.Apply(scramble);
                 c.Apply(MoveSequence.Invert(scramble));
 
-                Assert.True(c.Equals(new Cube(n)));   // точний збіг наліпок, не лише IsSolved
+                Assert.True(c.Equals(new Cube(n)));   // exact sticker match, not just IsSolved
             }
         }
 
@@ -113,18 +113,18 @@ namespace Rubik.Tests
                 }
         }
 
-        // ------------------------------------------------------------ напрямки ходів (перевірено руками)
+        // ------------------------------------------------------------ move directions (checked by hand)
 
         [Fact]
         public void R_MovesStickersLikeTheRealCube()
         {
             var c = After(3, "R");
-            // R за годинниковою: F -> U -> B -> D -> F
+            // R clockwise: F -> U -> B -> D -> F
             Assert.True(Line(c, Face.U, false, 2, Face.F));
             Assert.True(Line(c, Face.B, false, 0, Face.U));
             Assert.True(Line(c, Face.D, false, 2, Face.B));
             Assert.True(Line(c, Face.F, false, 2, Face.D));
-            Assert.True(Line(c, Face.U, false, 0, Face.U));   // ліві стовпці не зачеплені
+            Assert.True(Line(c, Face.U, false, 0, Face.U));   // the left columns are untouched
         }
 
         [Fact]
@@ -182,7 +182,7 @@ namespace Rubik.Tests
             Assert.True(Line(c, Face.U, true, 0, Face.R));
         }
 
-        // ------------------------------------------------------------ алгебраїчні властивості
+        // ------------------------------------------------------------ algebraic properties
 
         [Theory]
         [InlineData(3)] [InlineData(4)] [InlineData(5)]
@@ -227,8 +227,8 @@ namespace Rubik.Tests
         {
             var solved = new Cube(n);
 
-            // Зовнішня грань: сама вона одноколірна, тож змінюється лише кільце 4N.
-            // Внутрішній зріз: теж рівно кільце 4N.
+            // Outer face: the face itself is one color, so only the 4N ring changes.
+            // Inner slice: also exactly the 4N ring.
             for (int layer = 0; layer < n; layer++)
             {
                 var c = new Cube(n);
@@ -237,7 +237,7 @@ namespace Rubik.Tests
             }
         }
 
-        // ------------------------------------------------------------ повороти всього куба
+        // ------------------------------------------------------------ whole-cube rotations
 
         [Theory]
         [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)] [InlineData(6)]
@@ -259,7 +259,7 @@ namespace Rubik.Tests
             Assert.True(After(3, "z").Equals(After(3, "F S B'")));
         }
 
-        // ------------------------------------------------------------ розгортка
+        // ------------------------------------------------------------ net
 
         [Fact]
         public void NetString_OfSolvedCube_HasExpectedShape()

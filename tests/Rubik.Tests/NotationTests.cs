@@ -35,7 +35,7 @@ namespace Rubik.Tests
         [Fact]
         public void Parse_NegativeFaces_AreMirroredOntoTheAxis()
         {
-            // L, D, B: крайній шар "з іншого боку осі" і напрямок за годинниковою з їхнього боку
+            // L, D, B: the outer layer "on the other side of the axis", clockwise as seen from their side
             Assert.Equal(new Move(Axis.X, 4, 4, 3), Notation.Parse("L", 5)[0]);
             Assert.Equal(new Move(Axis.Y, 4, 4, 1), Notation.Parse("D'", 5)[0]);
             Assert.Equal(new Move(Axis.Y, 3, 3, 3), Notation.Parse("2D", 5)[0]);
@@ -65,9 +65,9 @@ namespace Rubik.Tests
         [InlineData("R''", 3)]
         [InlineData("Rw2w", 3)]
         [InlineData("0R", 3)]
-        [InlineData("4R", 3)]       // шару 4 немає в кубі 3x3
+        [InlineData("4R", 3)]       // there is no layer 4 in a 3x3
         [InlineData("4Rw", 3)]
-        [InlineData("M", 4)]        // M/E/S лише для непарних N
+        [InlineData("M", 4)]        // M/E/S only for odd N
         [InlineData("2x", 3)]
         [InlineData("xw", 3)]
         [InlineData("99999999999R", 3)]
@@ -83,14 +83,14 @@ namespace Rubik.Tests
             for (int seed = 0; seed < 10; seed++)
             {
                 var moves = Scrambler.Generate(n, 60, seed);
-                // додаємо широкі ходи й повороти, щоб покрити всі гілки форматера
+                // add wide moves and rotations to cover every branch of the formatter
                 moves.Add(new Move(Axis.X, 0, n - 1, 1));
                 if (n >= 3)
                 {
-                    moves.Add(new Move(Axis.Y, 1, n - 1, 3));   // діапазон до протилежної грані
-                    moves.Add(new Move(Axis.Z, 0, n - 2, 2));   // діапазон від додатної грані
+                    moves.Add(new Move(Axis.Y, 1, n - 1, 3));   // range up to the opposite face
+                    moves.Add(new Move(Axis.Z, 0, n - 2, 2));   // range from the positive face
                 }
-                if (n >= 5) moves.Add(new Move(Axis.X, 1, n - 2, 1));  // внутрішній діапазон
+                if (n >= 5) moves.Add(new Move(Axis.X, 1, n - 2, 1));  // inner range
 
                 string text = Notation.Format(moves, n);
 
@@ -129,7 +129,7 @@ namespace Rubik.Tests
                 for (int seed = 0; seed < 10; seed++)
                 {
                     var moves = Scrambler.Generate(n, 40, seed);
-                    // штучно вставляємо повтори й скасування, щоб Simplify мав що робити
+                    // insert repeats and cancellations on purpose so Simplify has work to do
                     var noisy = new List<Move>();
                     foreach (var m in moves) { noisy.Add(m); noisy.Add(m); noisy.Add(m.Inverse()); }
 

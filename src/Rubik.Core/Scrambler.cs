@@ -6,8 +6,8 @@ namespace Rubik.Core
     public static class Scrambler
     {
         /// <summary>
-        /// Випадкова послідовність одношарових ходів (усі осі, усі шари, 1..3 чверті).
-        /// Два ходи поспіль по одному й тому ж шарі не генеруються. Однаковий seed дає однаковий скрамбл.
+        /// Random sequence of single-layer moves (all axes, outer layers, 1..3 quarter turns).
+        /// Two moves in a row on the same layer are never generated. The same seed gives the same scramble.
         /// </summary>
         public static List<Move> Generate(int size, int length, int seed)
         {
@@ -24,7 +24,8 @@ namespace Rubik.Core
                 do
                 {
                     axis = rng.Next(3);
-                    layer = rng.Next(size);
+                    // Only outer faces are turned (0 or size - 1)
+                    layer = rng.Next(2) == 0 ? 0 : size - 1;
                 } while (axis == lastAxis && layer == lastLayer);
 
                 moves.Add(new Move((Axis)axis, layer, rng.Next(1, 4)));

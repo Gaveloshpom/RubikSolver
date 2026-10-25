@@ -19,15 +19,15 @@ namespace Rubik.Solver3x3
                 {
                     var last = optimized[optimized.Count - 1];
 
-                    // Якщо попередній і поточний хід обертають ту саму площину (вісь + шари)
+                    // If the previous and the current move turn the same plane (axis + layers)
                     if (last.Axis == m.Axis && last.LayerFrom == m.LayerFrom && last.LayerTo == m.LayerTo)
                     {
                         optimized.RemoveAt(optimized.Count - 1);
 
-                        // Додаємо повороти (1=90°, 2=180°, 3=270°/-90°)
+                        // Add the turns (1=90°, 2=180°, 3=270°/-90°)
                         int newTurns = (last.Turns + m.Turns) % 4;
 
-                        // Якщо грані не повернулися в нуль, записуємо новий об'єднаний хід
+                        // If the turns do not cancel out, store the merged move
                         if (newTurns != 0)
                         {
                             optimized.Add(new Move(last.Axis, last.LayerFrom, last.LayerTo, newTurns));

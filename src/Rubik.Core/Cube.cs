@@ -5,31 +5,31 @@ using System.Text;
 namespace Rubik.Core
 {
     /// <summary>
-    /// Куб NxN у вигляді наліпок (stickers): один плоский byte[6*N*N].
-    /// Індекс = face * N*N + row * N + col. Значення = колір (0..5, номер грані розв'язаного куба).
+    /// NxN cube stored as stickers: one flat byte[6*N*N].
+    /// Index = face * N*N + row * N + col. Value = color (0..5, the face index in the solved cube).
     ///
-    /// Розгортка (як у Kociemba):
+    /// Net (as in Kociemba):
     ///         U
     ///     L   F   R   B
     ///         D
-    /// U: рядок 0 біля грані B; D: рядок 0 біля грані F;
-    /// бічні грані: рядок 0 угорі, стовпець 0 ліворуч (якщо дивитися на грань ззовні).
+    /// U: row 0 is next to face B; D: row 0 is next to face F;
+    /// side faces: row 0 at the top, column 0 on the left (looking at the face from outside).
     ///
-    /// Джерело істини для ходів — 3D-геометрія. Кожна наліпка має цілі координати
-    /// (x вправо, y вгору, z до глядача), подвоєні й центровані, тож поворот на 90° це точна
-    /// цілочисельна операція без похибок і без ручних таблиць перестановок. Пізніше можна
-    /// додати швидку цикл-версію і звіряти її з цією як з еталоном.
+    /// Moves are defined by 3D geometry. Every sticker has integer coordinates
+    /// (x right, y up, z towards the viewer), doubled and centred, so a 90° turn is an exact
+    /// integer operation with no rounding and no hand-written permutation tables. A fast cycle-based
+    /// version can be added later and checked against this one as the reference.
     /// </summary>
     public sealed class Cube : IEquatable<Cube>
     {
-        /// <summary>Ліміт розміру для v1. Для v2 (гіга-куби) підніметься разом із рендером.</summary>
+        /// <summary>Size limit for v1. It will be raised for v2 (giant cubes) together with the renderer.</summary>
         public const int MaxSize = 100;
 
         private readonly int _n;
         private readonly int _n2;
         private readonly byte[] _s;
 
-        // Робочі буфери (щоб хід не алокував): індекси зачеплених наліпок і їхні значення.
+        // Work buffers (so a move does not allocate): indices of the affected stickers and their values.
         private readonly int[] _idx;
         private readonly byte[] _val;
         private readonly int[] _p = new int[3];
@@ -42,15 +42,31 @@ namespace Rubik.Core
             _n = size;
             _n2 = size * size;
             _s = new byte[6 * _n2];
-            int work = 2 * _n2 + 4 * _n; // з запасом: грань + кільце (для N=1 обидві грані)
+            int work = 2 * _n2 + 4 * _n; // with headroom: a face + the ring (both faces for N=1)
             _idx = new int[work];
             _val = new byte[work];
             Reset();
         }
 
+        /// <summary>
+        /// Cube from given stickers (6*N*N values 0..5, same order as <see cref="Stickers"/>).
+        /// Checks only the length and the range; whether the cube is solvable is up to the solver.
+        /// </summary>
+        public static Cube FromStickers(int size, ReadOnlySpan<byte> stickers)
+        {
+            var c = new Cube(size);
+            if (stickers.Length != c._s.Length)
+                throw new ArgumentException($"Expected {c._s.Length} stickers, got {stickers.Length}.", nameof(stickers));
+            for (int i = 0; i < stickers.Length; i++)
+                if (stickers[i] > 5)
+                    throw new ArgumentException($"Sticker {i} has invalid color {stickers[i]}.", nameof(stickers));
+            stickers.CopyTo(c._s);
+            return c;
+        }
+
         public int Size => _n;
 
-        /// <summary>Сирі наліпки тільки для читання (для рендера, солверів, тестів).</summary>
+        /// <summary>Raw read-only stickers (for rendering, solvers, tests).</summary>
         public ReadOnlySpan<byte> Stickers => _s;
 
         public byte this[Face face, int row, int col]
@@ -77,8 +93,8 @@ namespace Rubik.Core
         }
 
         /// <summary>
-        /// Розв'язаний: кожна грань одноколірна і всі шість кольорів різні.
-        /// Так працює й для парних N (немає нерухомих центрів) і для куба, повернутого в просторі.
+        /// Solved: every face has one color and all six colors are different.
+        /// This also works for even N (no fixed centres) and for a cube rotated in space.
         /// </summary>
         public bool IsSolved
         {
@@ -100,7 +116,7 @@ namespace Rubik.Core
             }
         }
 
-        // ---------------------------------------------------------------- ходи
+        // ---------------------------------------------------------------- moves
 
         public void Apply(Move move)
         {
@@ -117,26 +133,26 @@ namespace Rubik.Core
             foreach (var m in moves) Apply(m);
         }
 
-        /// <summary>Застосовує нотацію, напр. "R U R' U' 2R 3Rw2 x". Див. <see cref="Notation"/>.</summary>
+        /// <summary>Applies notation, e.g. "R U R' U' 2R 3Rw2 x". See <see cref="Notation"/>.</summary>
         public void Apply(string notation) => Apply(Notation.Parse(notation, _n));
 
         /// <summary>
-        /// Повертає один шар: axis, layer (0 = від додатної грані), turns = 1..3 чвертей.
-        /// Шар = кільце з 4N наліпок + (для крайніх шарів) уся грань N².
+        /// Turns one layer: axis, layer (0 = next to the positive face), turns = 1..3 quarter turns.
+        /// A layer = a ring of 4N stickers + (for outer layers) the whole N² face.
         /// </summary>
         private void TurnLayer(int axis, int layer, int turns)
         {
             int n = _n, m = n - 1;
-            int v = m - 2 * layer;            // координата центрів кубиків цього шару вздовж осі
+            int v = m - 2 * layer;            // coordinate of this layer's cubie centres along the axis
             int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
             var p = _p;
             int cnt = 0;
 
-            // 1) кільце: 4 бічні грані, по N наліпок у шарі
+            // 1) the ring: 4 side faces, N stickers each in this layer
             for (int s = 0; s < 2; s++)
             {
-                int side = s == 0 ? a1 : a2;    // вісь, на якій наліпка лежить на поверхні (=±N)
-                int other = s == 0 ? a2 : a1;   // вісь, вздовж якої йде смужка
+                int side = s == 0 ? a1 : a2;    // axis on which the sticker lies on the surface (=±N)
+                int other = s == 0 ? a2 : a1;   // axis along which the strip runs
                 for (int sign = -1; sign <= 1; sign += 2)
                 {
                     for (int j = 0; j < n; j++)
@@ -149,11 +165,11 @@ namespace Rubik.Core
                 }
             }
 
-            // 2) сама грань, якщо шар крайній (для N=1 це обидві грані)
+            // 2) the face itself if the layer is an outer one (both faces for N=1)
             if (layer == 0) cnt = AddFace(axis, n, cnt);
             if (layer == m) cnt = AddFace(axis, -n, cnt);
 
-            // 3) циклічно переносимо значення
+            // 3) move the values around
             for (int i = 0; i < cnt; i++) _val[i] = _s[_idx[i]];
 
             for (int i = 0; i < cnt; i++)
@@ -182,9 +198,9 @@ namespace Rubik.Core
             return cnt;
         }
 
-        // ---------------------------------------------------------------- геометрія
+        // ---------------------------------------------------------------- geometry
 
-        /// <summary>Чверть оберту за годинниковою стрілкою, якщо дивитися з додатного боку осі.</summary>
+        /// <summary>A clockwise quarter turn, looking from the positive side of the axis.</summary>
         private static void RotateOnce(int axis, ref int x, ref int y, ref int z)
         {
             int t;
@@ -196,7 +212,7 @@ namespace Rubik.Core
             }
         }
 
-        /// <summary>Точка на поверхні (одна координата = ±N) -> індекс наліпки.</summary>
+        /// <summary>Point on the surface (one coordinate = ±N) -> sticker index.</summary>
         private int ToIndex(int x, int y, int z)
         {
             int n = _n, m = n - 1;
@@ -210,14 +226,14 @@ namespace Rubik.Core
             return face * _n2 + row * n + col;
         }
 
-        /// <summary>Індекс наліпки -> точка на поверхні (обернене до ToIndex).</summary>
+        /// <summary>Sticker index -> point on the surface (inverse of ToIndex).</summary>
         private void ToPoint(int index, out int x, out int y, out int z)
         {
             int n = _n, m = n - 1;
             int face = index / _n2;
             int rem = index - face * _n2;
-            int a = 2 * (rem % n) - m;   // з колонки
-            int b = 2 * (rem / n) - m;   // з рядка
+            int a = 2 * (rem % n) - m;   // from the column
+            int b = 2 * (rem / n) - m;   // from the row
             switch (face)
             {
                 case 0: x = a;  y = n;  z = b;  break;   // U
@@ -229,7 +245,7 @@ namespace Rubik.Core
             }
         }
 
-        // ---------------------------------------------------------------- порівняння / вивід
+        // ---------------------------------------------------------------- equality / output
 
         public bool Equals(Cube other) =>
             other != null && other._n == _n && _s.AsSpan().SequenceEqual(other._s);
@@ -246,7 +262,7 @@ namespace Rubik.Core
             }
         }
 
-        /// <summary>Текстова розгортка (символи URFDLB), рядки розділені '\n'.</summary>
+        /// <summary>Text net (URFDLB characters), lines separated by '\n'.</summary>
         public string ToNetString()
         {
             const string letters = "URFDLB";
