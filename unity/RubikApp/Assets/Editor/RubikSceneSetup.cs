@@ -7,7 +7,6 @@ using UnityEngine.UIElements;
 public static class RubikSceneSetup
 {
     private const string ScenePath = "Assets/Scenes/Main.unity";
-    private const string MaterialsFolder = "Assets/Materials";
 
     [MenuItem("Rubik/Create Main Scene")]
     private static void CreateMainScene()
@@ -16,9 +15,6 @@ public static class RubikSceneSetup
         if (AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null &&
             !EditorUtility.DisplayDialog("Rubik", $"{ScenePath} already exists. Overwrite?", "Overwrite", "Cancel"))
             return;
-
-        var stickerMat = LoadOrCreateMaterial("Sticker", Color.white, 0.6f);
-        var bodyMat = LoadOrCreateMaterial("CubeBody", new Color(0.06f, 0.06f, 0.07f), 0.35f);
 
         var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
@@ -37,9 +33,7 @@ public static class RubikSceneSetup
         }
 
         var cubeGo = new GameObject("Cube");
-        var view = cubeGo.AddComponent<CubeView>();
-        view.stickerMaterial = stickerMat;
-        view.bodyMaterial = bodyMat;
+        var view = cubeGo.AddComponent<CubeView>(); // draws itself with the Rubik/CubeFace shader from Resources
 
         var app = new GameObject("App").AddComponent<CubeAppController>();
         app.view = view;
@@ -67,19 +61,5 @@ public static class RubikSceneSetup
         settings.match = 0.5f;
         AssetDatabase.CreateAsset(settings, path);
         return settings;
-    }
-
-    private static Material LoadOrCreateMaterial(string name, Color color, float smoothness)
-    {
-        string path = $"{MaterialsFolder}/{name}.mat";
-        var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-        if (mat != null) return mat;
-
-        if (!AssetDatabase.IsValidFolder(MaterialsFolder)) AssetDatabase.CreateFolder("Assets", "Materials");
-        mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        mat.SetColor("_BaseColor", color);
-        mat.SetFloat("_Smoothness", smoothness);
-        AssetDatabase.CreateAsset(mat, path);
-        return mat;
     }
 }

@@ -3,13 +3,17 @@ using Rubik.Core;
 using UnityEngine;
 
 /// <summary>
-/// 3D view of an NxN cube. The source of truth is <see cref="Model"/> (Rubik.Core.Cube):
-/// a move is animated by rotating a group of cubies; when it finishes, the model applies the move,
-/// the cubies snap back to their home transforms and the stickers are repainted from the model.
+/// 3D view of an NxN cube (N up to <see cref="Cube.MaxSize"/>). The source of truth is <see cref="Model"/>
+/// (Rubik.Core.Cube): a move is animated by rotating the turning layers, and when it finishes the model
+/// applies the move and the stickers are repainted from the model.
 ///
-/// Coordinates: the model is right-handed (x right, y up, z towards the viewer, F = +z),
-/// Unity is left-handed, so z is flipped. A model move about X/Y/Z is +90° about the
-/// Unity vectors right / up / back.
+/// Rendering does not depend on N: the cube is drawn as at most three boxes (the turning layers and the
+/// still parts on either side), 24 vertices each, with the Rubik/CubeFace shader. Sticker colors live in
+/// one 6N x N texture, one texel per sticker, and the shader draws the rounded stickers and the gaps.
+///
+/// Coordinates: the model is right-handed (x right, y up, z towards the viewer, F = +z) and uses doubled
+/// integer coordinates (the cube spans -N..N); Unity is left-handed, so z is flipped. A model move about
+/// X/Y/Z is +90° about the Unity vectors right / up / back. The cube is scaled to 3 units whatever N is.
 /// </summary>
 public class CubeView : MonoBehaviour
 {
@@ -30,38 +34,23 @@ public class CubeView : MonoBehaviour
     public static Color ColorOf(byte color) => color < Palette.Length ? Palette[color] : EmptyColor;
 
     private static readonly Vector3[] AxisVectors = { Vector3.right, Vector3.up, Vector3.back };
-    private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+    private static readonly Color32[] Palette32 = BuildPalette32();
 
-    [Range(1, 10)] public int size = 3;
+    /// <summary>Edge length of the cube in Unity units, the same for every N.</summary>
+    private const float WorldSize = 3f;
+
+    [Range(1, Cube.MaxSize)] public int size = 3;
     [Tooltip("Seconds per quarter turn")]
     [Range(0.03f, 1f)] public float secondsPerTurn = 0.25f;
-    public Material stickerMaterial;
-    public Material bodyMaterial;
-    [Tooltip("Use the simple Rubik/WebLit shader instead of the materials above. Always on in web builds; turn on to preview that look in the editor.")]
-    public bool useWebShader;
+    public Color bodyColor = new Color(0.06f, 0.06f, 0.07f);
 
-    private class Cubie
-    {
-        public Transform Transform;
-        public Vector3Int Home; // doubled model coordinates of the cubie centre
-    }
-
-    private struct Sticker
-    {
-        public Renderer Renderer;
-        public int Index;        // index in Cube.Stickers
-        public Vector3Int Home;  // home of the cubie it sits on
-        public Vector3 Normal;   // outward face normal, cube-local Unity space
-    }
-
-    private readonly List<Cubie> _cubies = new List<Cubie>();
-    private readonly List<Sticker> _stickers = new List<Sticker>();
-    private readonly Dictionary<Collider, Sticker> _stickerByCollider = new Dictionary<Collider, Sticker>();
-    private byte[] _override; // when not null, these stickers are shown instead of the model (edit mode)
     private readonly Queue<Move> _queue = new Queue<Move>();
-    private readonly List<Cubie> _turning = new List<Cubie>();
-    private MaterialPropertyBlock _block;
+    private byte[] _override; // when not null, these stickers are shown instead of the model (edit mode)
+    private Texture2D _colors;
+    private Color32[] _pixels;
+    private Material _faceMaterial, _bodyMaterial;
     private Transform _pivot;
+    private Part _still1, _still2, _turning;
 
     private bool _animating;
     private Move _current;
@@ -78,10 +67,45 @@ public class CubeView : MonoBehaviour
     /// <summary>Raised after every repaint (move finished, new state, edit mode).</summary>
     public event System.Action Repainted;
 
+    /// <summary>One drawn box: a mesh renderer whose mesh is rebuilt for each move.</summary>
+    private sealed class Part
+    {
+        public readonly GameObject Object;
+        public readonly Mesh Mesh;
+
+        public Part(string name, Transform parent, Material face, Material body)
+        {
+            Object = new GameObject(name, typeof(MeshFilter), typeof(MeshRenderer));
+            Object.transform.SetParent(parent, false);
+            Mesh = new Mesh { name = name };
+            Object.GetComponent<MeshFilter>().sharedMesh = Mesh;
+            Object.GetComponent<MeshRenderer>().sharedMaterials = new[] { face, body };
+        }
+    }
+
     private void Awake()
     {
-        _block = new MaterialPropertyBlock();
+        var shader = Resources.Load<Shader>("RubikCubeFace");
+        _faceMaterial = new Material(shader) { name = "CubeFace" };
+        _bodyMaterial = new Material(shader) { name = "CubeBody" };
+        _bodyMaterial.SetFloat("_Body", 1f);
+        _faceMaterial.SetColor("_BodyColor", bodyColor);
+        _bodyMaterial.SetColor("_BodyColor", bodyColor);
+
+        _pivot = new GameObject("Pivot").transform;
+        _pivot.SetParent(transform, false);
+        _still1 = new Part("Still", transform, _faceMaterial, _bodyMaterial);
+        _still2 = new Part("Still 2", transform, _faceMaterial, _bodyMaterial);
+        _turning = new Part("Turning", _pivot, _faceMaterial, _bodyMaterial);
+
         Build(size);
+    }
+
+    private void OnDestroy()
+    {
+        if (_colors != null) Destroy(_colors);
+        Destroy(_faceMaterial);
+        Destroy(_bodyMaterial);
     }
 
     // ---------------------------------------------------------------- public API
@@ -96,7 +120,7 @@ public class CubeView : MonoBehaviour
         foreach (var m in moves) Enqueue(m);
     }
 
-    /// <summary>Stops the animation and shows the given state (copied).</summary>
+    /// <summary>Stops the animation and shows the given state (copied); the size follows the cube.</summary>
     public void SetState(Cube cube)
     {
         if (cube.Size != size) Build(cube.Size);
@@ -124,25 +148,71 @@ public class CubeView : MonoBehaviour
     /// <summary>Color of the sticker as currently shown (model or edit mode).</summary>
     public byte DisplayedColor(int index) => _override != null ? _override[index] : Model.Stickers[index];
 
-    public bool TryGetStickerIndex(Collider collider, out int index)
+    public void ResetCube() => SetState(new Cube(size));
+
+    /// <summary>Instantly completes the current animation and the whole queue.</summary>
+    public void FinishAll()
     {
-        bool found = _stickerByCollider.TryGetValue(collider, out var sticker);
-        index = sticker.Index;
-        return found;
+        if (_animating) CompleteCurrent();
+        while (_queue.Count > 0) Model.Apply(_queue.Dequeue());
+        Repaint();
     }
 
     /// <summary>
-    /// Converts a mouse drag that started on a sticker into a layer move: the drag picks one of the
-    /// two directions lying in the sticker's face, and the layer turns so the sticker follows the mouse.
+    /// The sticker hit by a world-space ray, using the cube at rest (good enough while a layer turns).
+    /// Index as in <see cref="Cube.Stickers"/>.
+    /// </summary>
+    public bool TryPickSticker(Ray ray, out int index)
+    {
+        index = -1;
+        var origin = transform.InverseTransformPoint(ray.origin);
+        var direction = transform.worldToLocalMatrix.MultiplyVector(ray.direction);
+        float half = size * 0.5f; // cube in local units spans -N/2..N/2
+
+        // slab method: the entry point is where the last of the three slabs is entered
+        float tEnter = float.NegativeInfinity, tExit = float.PositiveInfinity;
+        int enterAxis = -1;
+        for (int a = 0; a < 3; a++)
+        {
+            if (Mathf.Abs(direction[a]) < 1e-9f)
+            {
+                if (origin[a] < -half || origin[a] > half) return false;
+                continue;
+            }
+            float t1 = (-half - origin[a]) / direction[a];
+            float t2 = (half - origin[a]) / direction[a];
+            if (t1 > t2) (t1, t2) = (t2, t1);
+            if (t1 > tEnter) { tEnter = t1; enterAxis = a; }
+            tExit = Mathf.Min(tExit, t2);
+        }
+        if (enterAxis < 0 || tEnter > tExit || tExit < 0f) return false;
+
+        var hit = origin + direction * tEnter;
+        // back to doubled model coordinates (z flipped), with the hit coordinate snapped to the surface
+        var p = new Vector3(hit.x * 2f, hit.y * 2f, -hit.z * 2f);
+        int modelAxis = enterAxis; // x and y are the same axis in both spaces, z is z (only its sign flips)
+        float sign = Mathf.Sign(p[modelAxis]);
+        p[modelAxis] = sign * size;
+        index = StickerAt(size, p);
+        return index >= 0;
+    }
+
+    /// <summary>
+    /// Converts a drag that started on a sticker into a layer move: the drag picks one of the two
+    /// directions lying in the sticker's face, and the layer turns so the sticker follows the pointer.
     /// Uses the rest pose of the cube, so it also works while an animation is running.
     /// </summary>
-    public bool TryGetDragMove(Collider collider, Vector2 screenDelta, Camera cam, out Move move)
+    public bool TryGetDragMove(int stickerIndex, Vector2 screenDelta, Camera cam, out Move move)
     {
         move = default;
-        if (!_stickerByCollider.TryGetValue(collider, out var s) || screenDelta.sqrMagnitude < 1e-4f) return false;
+        int n = size;
+        if (stickerIndex < 0 || stickerIndex >= 6 * n * n || screenDelta.sqrMagnitude < 1e-4f) return false;
 
-        var normal = s.Normal;
-        var center = ToUnity(s.Home) + normal * 0.5f;
+        int face = stickerIndex / (n * n), rest = stickerIndex % (n * n);
+        StickerPoint(n, face, rest / n, rest % n, out var point, out var modelNormal);
+        var home = point - modelNormal; // doubled model coordinates of the cubie centre
+        var normal = ToUnityDirection(modelNormal);
+        var center = ToUnity(home) + normal * 0.5f;
         Vector2 screenCenter = cam.WorldToScreenPoint(transform.TransformPoint(center));
         var drag = screenDelta.normalized;
 
@@ -168,21 +238,11 @@ public class CubeView : MonoBehaviour
         for (int i = 1; i < 3; i++)
             if (Mathf.Abs(turnAxis[i]) > Mathf.Abs(turnAxis[axisIndex])) axisIndex = i;
 
-        int layer = (size - 1 - s.Home[axisIndex]) / 2;
+        int layer = (n - 1 - home[axisIndex]) / 2;
         var moved = Quaternion.AngleAxis(90f, AxisVectors[axisIndex]) * center;
         int turns = Vector3.Dot(moved - center, direction) > 0f ? 1 : 3;
         move = new Move((Axis)axisIndex, layer, turns);
         return true;
-    }
-
-    public void ResetCube() => SetState(new Cube(size));
-
-    /// <summary>Instantly completes the current animation and the whole queue.</summary>
-    public void FinishAll()
-    {
-        if (_animating) CompleteCurrent();
-        while (_queue.Count > 0) Model.Apply(_queue.Dequeue());
-        Repaint();
     }
 
     // ---------------------------------------------------------------- building
@@ -190,150 +250,33 @@ public class CubeView : MonoBehaviour
     private void Build(int n)
     {
         size = n;
-        for (int i = transform.childCount - 1; i >= 0; i--) Destroy(transform.GetChild(i).gameObject);
-        _cubies.Clear();
-        _stickers.Clear();
-        _stickerByCollider.Clear();
         _queue.Clear();
         _override = null;
         _animating = false;
+        _pivot.localRotation = Quaternion.identity;
+        transform.localScale = Vector3.one * (WorldSize / n);
 
-#if UNITY_WEBGL && !UNITY_EDITOR
-        useWebShader = true;
-#endif
-        if (useWebShader) UseWebShader();
-        if (stickerMaterial == null) stickerMaterial = CreateFallbackMaterial(Color.white);
-        if (bodyMaterial == null) bodyMaterial = CreateFallbackMaterial(new Color(0.06f, 0.06f, 0.07f));
-
-        _pivot = new GameObject("Pivot").transform;
-        _pivot.SetParent(transform, false);
-
-        int m = n - 1;
-        var byHome = new Dictionary<Vector3Int, Cubie>();
-        for (int x = -m; x <= m; x += 2)
-        for (int y = -m; y <= m; y += 2)
-        for (int z = -m; z <= m; z += 2)
+        if (_colors != null) Destroy(_colors);
+        _colors = new Texture2D(6 * n, n, TextureFormat.RGBA32, mipChain: false)
         {
-            bool surface = Mathf.Abs(x) == m || Mathf.Abs(y) == m || Mathf.Abs(z) == m;
-            if (!surface) continue;
-
-            var home = new Vector3Int(x, y, z);
-            var go = new GameObject($"Cubie {x},{y},{z}");
-            go.transform.SetParent(transform, false);
-            go.transform.localPosition = ToUnity(home);
-
-            var body = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            Destroy(body.GetComponent<Collider>());
-            body.name = "Body";
-            body.transform.SetParent(go.transform, false);
-            body.transform.localScale = Vector3.one * 0.97f;
-            body.GetComponent<Renderer>().sharedMaterial = bodyMaterial;
-
-            var cubie = new Cubie { Transform = go.transform, Home = home };
-            _cubies.Add(cubie);
-            byHome[home] = cubie;
-        }
-
-        var stickerMesh = CreateRoundedSquare(0.14f, 6);
-        for (int face = 0; face < 6; face++)
-        for (int row = 0; row < n; row++)
-        for (int col = 0; col < n; col++)
-        {
-            StickerPoint(n, face, row, col, out var point, out var normal);
-            var cubie = byHome[point - normal];
-
-            var quad = new GameObject($"Sticker {(Face)face}{row}{col}",
-                typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider));
-            quad.GetComponent<MeshFilter>().sharedMesh = stickerMesh;
-            quad.GetComponent<MeshCollider>().sharedMesh = stickerMesh;
-            quad.transform.SetParent(cubie.Transform, false);
-            var unityNormal = ToUnityDirection(normal);
-            quad.transform.localPosition = unityNormal * 0.487f;
-            // The mesh is visible from -forward, so forward points into the cube
-            quad.transform.localRotation = Quaternion.LookRotation(-unityNormal);
-            quad.transform.localScale = Vector3.one * 0.86f;
-            var r = quad.GetComponent<Renderer>();
-            r.sharedMaterial = stickerMaterial;
-
-            var sticker = new Sticker
-            {
-                Renderer = r,
-                Index = face * n * n + row * n + col,
-                Home = cubie.Home,
-                Normal = unityNormal,
-            };
-            _stickers.Add(sticker);
-            _stickerByCollider[quad.GetComponent<Collider>()] = sticker;
-        }
+            name = "StickerColors",
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Clamp,
+        };
+        _pixels = new Color32[6 * n * n];
+        _faceMaterial.mainTexture = _colors;
 
         Model = new Cube(n);
+        ShowWholeCube();
         Repaint();
     }
 
-    /// <summary>
-    /// A 1x1 square with rounded corners in the XY plane, visible from -Z (like the built-in Quad).
-    /// A triangle fan from the centre around the perimeter.
-    /// </summary>
-    private static Mesh CreateRoundedSquare(float radius, int segmentsPerCorner)
+    private static Color32[] BuildPalette32()
     {
-        var vertices = new List<Vector3> { Vector3.zero };
-        float inner = 0.5f - radius;
-        var corners = new[]
-        {
-            new Vector2(inner, inner), new Vector2(-inner, inner),
-            new Vector2(-inner, -inner), new Vector2(inner, -inner),
-        };
-        for (int c = 0; c < 4; c++)
-        for (int s = 0; s <= segmentsPerCorner; s++)
-        {
-            float angle = (c + (float)s / segmentsPerCorner) * Mathf.PI * 0.5f; // counter-clockwise
-            vertices.Add(new Vector3(corners[c].x + Mathf.Cos(angle) * radius, corners[c].y + Mathf.Sin(angle) * radius, 0f));
-        }
-
-        int perimeter = vertices.Count - 1;
-        var triangles = new int[perimeter * 3];
-        for (int i = 0; i < perimeter; i++)
-        {
-            // clockwise when seen from -Z, which is what Unity treats as front-facing
-            triangles[i * 3] = 0;
-            triangles[i * 3 + 1] = 1 + (i + 1) % perimeter;
-            triangles[i * 3 + 2] = 1 + i;
-        }
-
-        var normals = new Vector3[vertices.Count];
-        for (int i = 0; i < normals.Length; i++) normals[i] = Vector3.back;
-
-        var mesh = new Mesh { name = "RoundedSticker" };
-        mesh.SetVertices(vertices);
-        mesh.SetNormals(normals);
-        mesh.SetTriangles(triangles, 0);
-        mesh.RecalculateBounds();
-        return mesh;
-    }
-
-    /// <summary>Swaps the materials for ones using Rubik/WebLit (see the shader for why the web needs it).</summary>
-    private void UseWebShader()
-    {
-        var shader = Resources.Load<Shader>("RubikWebLit");
-        if (shader == null || !shader.isSupported)
-        {
-            Debug.LogWarning("[Rubik] Rubik/WebLit shader is not available, keeping the default materials");
-            return;
-        }
-        var bodyColor = bodyMaterial != null ? bodyMaterial.GetColor(BaseColorId) : new Color(0.06f, 0.06f, 0.07f);
-        stickerMaterial = new Material(shader) { name = "StickerWeb" };
-        bodyMaterial = new Material(shader) { name = "CubeBodyWeb" };
-        bodyMaterial.SetColor(BaseColorId, bodyColor);
-        bodyMaterial.SetFloat("_Specular", 0.05f);
-    }
-
-    private static Material CreateFallbackMaterial(Color color)
-    {
-        var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-        var mat = new Material(shader);
-        mat.SetColor(BaseColorId, color);
-        mat.color = color;
-        return mat;
+        var result = new Color32[Palette.Length + 1];
+        for (int i = 0; i < Palette.Length; i++) result[i] = Palette[i];
+        result[Palette.Length] = EmptyColor;
+        return result;
     }
 
     /// <summary>Same as Cube.ToPoint: sticker -> doubled point on the surface + face normal (model space).</summary>
@@ -352,18 +295,140 @@ public class CubeView : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Inverse of <see cref="StickerPoint"/> on a continuous scale: a point on face <paramref name="face"/>
+    /// (doubled model coordinates) -> (column, row) in stickers, 0..N across the face.
+    /// </summary>
+    private static Vector2 FaceCoords(int n, int face, Vector3 p)
+    {
+        switch (face)
+        {
+            case 0: return new Vector2((p.x + n) / 2f, (p.z + n) / 2f);  // U
+            case 1: return new Vector2((n - p.z) / 2f, (n - p.y) / 2f);  // R
+            case 2: return new Vector2((p.x + n) / 2f, (n - p.y) / 2f);  // F
+            case 3: return new Vector2((p.x + n) / 2f, (n - p.z) / 2f);  // D
+            case 4: return new Vector2((p.z + n) / 2f, (n - p.y) / 2f);  // L
+            default: return new Vector2((n - p.x) / 2f, (n - p.y) / 2f); // B
+        }
+    }
+
+    /// <summary>Face index (U R F D L B) of the outward direction along a model axis.</summary>
+    private static int FaceOf(int axis, int sign)
+    {
+        switch (axis)
+        {
+            case 0: return sign > 0 ? 1 : 4; // R / L
+            case 1: return sign > 0 ? 0 : 3; // U / D
+            default: return sign > 0 ? 2 : 5; // F / B
+        }
+    }
+
+    /// <summary>Sticker index at a point on the surface (doubled model coordinates), or -1.</summary>
+    private static int StickerAt(int n, Vector3 p)
+    {
+        for (int axis = 0; axis < 3; axis++)
+        {
+            if (Mathf.Abs(Mathf.Abs(p[axis]) - n) > 1e-3f) continue;
+            int face = FaceOf(axis, p[axis] > 0 ? 1 : -1);
+            var c = FaceCoords(n, face, p);
+            int col = Mathf.Clamp(Mathf.FloorToInt(c.x), 0, n - 1);
+            int row = Mathf.Clamp(Mathf.FloorToInt(c.y), 0, n - 1);
+            return face * n * n + row * n + col;
+        }
+        return -1;
+    }
+
     private static Vector3 ToUnity(Vector3Int doubled) => new Vector3(doubled.x, doubled.y, -doubled.z) * 0.5f;
+    private static Vector3 ToUnity(Vector3 doubled) => new Vector3(doubled.x, doubled.y, -doubled.z) * 0.5f;
     private static Vector3 ToUnityDirection(Vector3Int d) => new Vector3(d.x, d.y, -d.z);
+
+    /// <summary>
+    /// Builds a box spanning [min, max] (doubled model coordinates) into <paramref name="mesh"/>.
+    /// Faces on the cube surface go to submesh 0 with UVs in stickers of the color texture;
+    /// inner faces (cuts between turning and still layers) go to submesh 1 and are drawn as the body.
+    /// </summary>
+    private static void BuildBox(Mesh mesh, int n, Vector3Int min, Vector3Int max)
+    {
+        var vertices = new List<Vector3>(24);
+        var normals = new List<Vector3>(24);
+        var uvs = new List<Vector2>(24);
+        var surface = new List<int>(36);
+        var inner = new List<int>(36);
+
+        for (int axis = 0; axis < 3; axis++)
+        for (int sign = -1; sign <= 1; sign += 2)
+        {
+            int planeCoord = sign > 0 ? max[axis] : min[axis];
+            bool onSurface = planeCoord == sign * n;
+            int face = FaceOf(axis, sign);
+            int b = (axis + 1) % 3, c = (axis + 2) % 3;
+
+            var modelNormal = Vector3Int.zero;
+            modelNormal[axis] = sign;
+            var normal = ToUnityDirection(modelNormal);
+
+            int start = vertices.Count;
+            var corners = new Vector3[4];
+            for (int k = 0; k < 4; k++)
+            {
+                var p = Vector3.zero;
+                p[axis] = planeCoord;
+                p[b] = k == 0 || k == 3 ? min[b] : max[b];
+                p[c] = k < 2 ? min[c] : max[c];
+                corners[k] = ToUnity(p);
+                vertices.Add(corners[k]);
+                normals.Add(normal);
+                if (onSurface)
+                {
+                    var fc = FaceCoords(n, face, p);
+                    uvs.Add(new Vector2(face * n + fc.x, fc.y));
+                }
+                else uvs.Add(Vector2.zero);
+            }
+
+            // Unity draws triangles that are clockwise seen from the front, i.e. whose
+            // cross product points towards the viewer (outwards here)
+            bool flip = Vector3.Dot(Vector3.Cross(corners[1] - corners[0], corners[2] - corners[0]), normal) < 0f;
+            var triangles = onSurface ? surface : inner;
+            if (!flip)
+                triangles.AddRange(new[] { start, start + 1, start + 2, start, start + 2, start + 3 });
+            else
+                triangles.AddRange(new[] { start, start + 2, start + 1, start, start + 3, start + 2 });
+        }
+
+        mesh.Clear();
+        mesh.SetVertices(vertices);
+        mesh.SetNormals(normals);
+        mesh.SetUVs(0, uvs);
+        mesh.subMeshCount = 2;
+        mesh.SetTriangles(surface, 0);
+        mesh.SetTriangles(inner, 1);
+        mesh.RecalculateBounds();
+    }
+
+    private void ShowWholeCube()
+    {
+        int n = size;
+        BuildBox(_still1.Mesh, n, new Vector3Int(-n, -n, -n), new Vector3Int(n, n, n));
+        _still1.Object.SetActive(true);
+        _still2.Object.SetActive(false);
+        _turning.Object.SetActive(false);
+    }
 
     // ---------------------------------------------------------------- painting
 
     private void Repaint()
     {
-        foreach (var s in _stickers)
+        int count = 6 * size * size, n2 = size * size;
+        for (int i = 0; i < count; i++)
         {
-            _block.SetColor(BaseColorId, ColorOf(DisplayedColor(s.Index)));
-            s.Renderer.SetPropertyBlock(_block);
+            byte color = DisplayedColor(i);
+            // texel (face*N + col, row) holds sticker face*N*N + row*N + col
+            int face = i / n2, rest = i % n2;
+            _pixels[(rest / size) * 6 * size + face * size + rest % size] = Palette32[Mathf.Min(color, (byte)Palette.Length)];
         }
+        _colors.SetPixels32(_pixels);
+        _colors.Apply(false);
         Repainted?.Invoke();
     }
 
@@ -396,19 +461,32 @@ public class CubeView : MonoBehaviour
         _targetAngle = 90f * turns;
         _duration = secondsPerTurn * (Mathf.Abs(turns) == 2 ? 1.5f : 1f);
 
-        int m = size - 1;
-        _turning.Clear();
-        _pivot.localRotation = Quaternion.identity;
-        foreach (var c in _cubies)
+        // Layer l occupies [n - 2(l+1), n - 2l] along the axis (layer 0 is next to the positive face).
+        // The turning layers form one box; the still layers on either side form up to two more.
+        int n = size, axis = (int)move.Axis;
+        int hi = n - 2 * move.LayerFrom, lo = n - 2 * (move.LayerTo + 1);
+        var min = new Vector3Int(-n, -n, -n);
+        var max = new Vector3Int(n, n, n);
+
+        var turnMin = min; turnMin[axis] = lo;
+        var turnMax = max; turnMax[axis] = hi;
+        BuildBox(_turning.Mesh, n, turnMin, turnMax);
+        _turning.Object.SetActive(true);
+
+        bool above = hi < n, below = lo > -n;
+        if (above)
         {
-            int coord = c.Home[(int)move.Axis];
-            int layer = (m - coord) / 2; // layer 0 = the positive face
-            if (layer >= move.LayerFrom && layer <= move.LayerTo)
-            {
-                c.Transform.SetParent(_pivot, true);
-                _turning.Add(c);
-            }
+            var aMin = min; aMin[axis] = hi;
+            BuildBox(_still1.Mesh, n, aMin, max);
         }
+        if (below)
+        {
+            var bMax = max; bMax[axis] = lo;
+            BuildBox((above ? _still2 : _still1).Mesh, n, min, bMax);
+        }
+        _still1.Object.SetActive(above || below);
+        _still2.Object.SetActive(above && below);
+        _pivot.localRotation = Quaternion.identity;
     }
 
     private void CompleteCurrent()
@@ -420,14 +498,8 @@ public class CubeView : MonoBehaviour
 
     private void StopAnimation()
     {
-        foreach (var c in _turning)
-        {
-            c.Transform.SetParent(transform, false);
-            c.Transform.localPosition = ToUnity(c.Home);
-            c.Transform.localRotation = Quaternion.identity;
-        }
-        _turning.Clear();
-        if (_pivot != null) _pivot.localRotation = Quaternion.identity;
+        if (_animating) ShowWholeCube();
+        _pivot.localRotation = Quaternion.identity;
         _animating = false;
     }
 }

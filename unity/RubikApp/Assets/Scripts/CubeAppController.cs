@@ -13,7 +13,10 @@ using UnityEngine.InputSystem;
 public class CubeAppController : MonoBehaviour
 {
     public CubeView view;
+    [Tooltip("Scramble length for a 3x3; bigger cubes get more moves, see ScrambleLength")]
     public int scrambleLength = 20;
+    [Tooltip("Up to this size scrambles are animated; bigger cubes are scrambled instantly")]
+    public int animatedScrambleMaxSize = 7;
     [Range(0.03f, 1f)] public float scrambleSecondsPerTurn = 0.08f;
     [Tooltip("Frame rate cap used when the driver ignores VSync")]
     public int targetFrameRate = 60;
@@ -29,7 +32,11 @@ public class CubeAppController : MonoBehaviour
     private float _normalSpeed;
     private Vector2 _pressPosition;
     private bool _pressOverUi;
-    private Collider _dragSticker;
+    private int _dragSticker = -1; // sticker index under the pointer when a drag started, -1 = none
+    private const string SizePrefsKey = "cubeSize";
+
+    /// <summary>Smallest and largest cube the app offers.</summary>
+    public const int MinSize = 2, MaxSize = Cube.MaxSize;
     private string _statusKey;
     private object[] _statusArgs;
 
@@ -114,8 +121,34 @@ public class CubeAppController : MonoBehaviour
 
         // a left drag that starts on the cube turns a layer instead of orbiting the camera
         var orbit = Camera.main != null ? Camera.main.GetComponent<OrbitCamera>() : null;
-        if (orbit != null) orbit.capturesLeftDrag = p => !IsEditing && RaycastSticker(p, out _);
+        if (orbit != null) orbit.capturesLeftDrag = p => !IsEditing && PickSticker(p, out _);
+
+        int savedSize = Mathf.Clamp(PlayerPrefs.GetInt(SizePrefsKey, view.size), MinSize, MaxSize);
+        if (savedSize != view.size) view.SetState(new Cube(savedSize));
     }
+
+    /// <summary>Only the 3x3 has a solver and the cube editor so far.</summary>
+    public bool CanSolve => view.size == 3;
+
+    /// <summary>Switches to a solved cube of another size (2..100).</summary>
+    public void SetSize(int newSize)
+    {
+        newSize = Mathf.Clamp(newSize, MinSize, MaxSize);
+        if (newSize == view.size) return;
+        if (IsEditing) CancelEdit();
+        _solveTask = null;
+        ClearSolution();
+        view.SetState(new Cube(newSize));
+        PlayerPrefs.SetInt(SizePrefsKey, newSize);
+        PlayerPrefs.Save();
+        SetStatus("status.size", newSize);
+    }
+
+    /// <summary>
+    /// Bigger cubes need more moves to look mixed: 20 for a 3x3 and about 10 per layer above that,
+    /// capped so a 100x100 scramble stays quick to apply.
+    /// </summary>
+    private int ScrambleLength(int n) => n <= 3 ? scrambleLength : Mathf.Clamp(10 * n, 40, 500);
 
     /// <summary>
     /// Runs heavy solver work off the UI. On desktop that is a thread-pool task; the browser has no
@@ -234,11 +267,15 @@ public class CubeAppController : MonoBehaviour
     {
         if (IsEditing || IsSolving) return;
         view.FinishAll();
-        var scramble = Scrambler.Generate(view.size, scrambleLength, Environment.TickCount);
+        int n = view.size;
+        // inner slices only exist from 4x4 up; for the 3x3 keep outer faces, which the solvers expect (fixed centres)
+        var scramble = Scrambler.Generate(n, ScrambleLength(n), Environment.TickCount, innerLayers: n > 3);
         view.secondsPerTurn = scrambleSecondsPerTurn;
         view.Enqueue(scramble);
+        if (n > animatedScrambleMaxSize) view.FinishAll(); // hundreds of moves: show the result at once
         ClearSolution();
-        SetStatus("status.scramble", Notation.Format(scramble, view.size));
+        if (scramble.Count <= 30) SetStatus("status.scramble", Notation.Format(scramble, n));
+        else SetStatus("status.scrambleLong", scramble.Count);
     }
 
     public void Solve()
@@ -339,36 +376,35 @@ public class CubeAppController : MonoBehaviour
     {
         var pointer = PointerInput.Current;
         if (pointer == null) return;
-        if (PointerInput.ActiveTouches >= 2) { _dragSticker = null; return; } // pinch zoom, not a turn
+        if (PointerInput.ActiveTouches >= 2) { _dragSticker = -1; return; } // pinch zoom, not a turn
         var position = pointer.position.ReadValue();
 
         if (pointer.press.wasPressedThisFrame)
         {
-            _dragSticker = null;
-            if (!CubeUI.IsPointerOverUi(position) && RaycastSticker(position, out var hit))
+            _dragSticker = -1;
+            if (!CubeUI.IsPointerOverUi(position) && PickSticker(position, out int index))
             {
-                _dragSticker = hit.collider;
+                _dragSticker = index;
                 _pressPosition = position;
             }
         }
-        if (!pointer.press.isPressed) _dragSticker = null;
-        if (_dragSticker == null) return;
+        if (!pointer.press.isPressed) _dragSticker = -1;
+        if (_dragSticker < 0) return;
 
         var delta = position - _pressPosition;
         if (delta.magnitude < dragThreshold * ScreenScale) return;
 
         if (view.TryGetDragMove(_dragSticker, delta, Camera.main, out var move))
             ManualMove(new[] { move });
-        _dragSticker = null; // one move per drag
+        _dragSticker = -1; // one move per drag
     }
 
-    private bool RaycastSticker(Vector2 screenPosition, out RaycastHit hit)
+    /// <summary>Sticker under a screen point (index as in Cube.Stickers).</summary>
+    private bool PickSticker(Vector2 screenPosition, out int index)
     {
-        hit = default;
+        index = -1;
         var cam = Camera.main;
-        return cam != null &&
-               Physics.Raycast(cam.ScreenPointToRay(screenPosition), out hit) &&
-               view.TryGetStickerIndex(hit.collider, out _);
+        return cam != null && view.TryPickSticker(cam.ScreenPointToRay(screenPosition), out index);
     }
 
     // ---------------------------------------------------------------- edit mode
@@ -448,7 +484,7 @@ public class CubeAppController : MonoBehaviour
         }
         float tapRadius = 6f * ScreenScale;
         if (pointer.press.wasReleasedThisFrame && !_pressOverUi && (position - _pressPosition).sqrMagnitude < tapRadius * tapRadius &&
-            RaycastSticker(position, out var hit) && view.TryGetStickerIndex(hit.collider, out int index))
+            PickSticker(position, out int index))
             PaintSticker(index);
     }
 

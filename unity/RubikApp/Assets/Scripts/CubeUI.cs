@@ -10,7 +10,6 @@ using UnityEngine.UIElements;
 public class CubeUI : MonoBehaviour
 {
     public CubeAppController app;
-    public float cellSize = 26f;
 
     private const string PanelClass = "rubik-panel";
     private const string ScalePrefsKey = "uiScale";
@@ -46,12 +45,22 @@ public class CubeUI : MonoBehaviour
     private Button _menuButton;
     private readonly List<VisualElement> _collapsible = new List<VisualElement>();
 
-    private readonly VisualElement[] _cells = new VisualElement[CubeEditor.StickerCount];
+    // Net layout. Up to MaxElementNetSize the net has one element per sticker (rounded, paintable);
+    // bigger cubes would need thousands of elements, so there the net is one image, a texel per sticker.
+    private const int MaxElementNetSize = 12;
+    private const float NetFaceSize = 82f, NetFaceGap = 4f;
+    private const float NetWidth = NetFaceSize * 4 + NetFaceGap * 3;
+    private VisualElement[] _cells = new VisualElement[0];
+    private VisualElement _netHost, _netImage;
+    private Texture2D _netTexture;
+    private Color32[] _netPixels;
+    private int _netSize;
     private readonly VisualElement[] _swatches = new VisualElement[6];
     private VisualElement _palette, _playButtons, _editButtons, _speedRow, _solutionPanel, _tokens;
-    private Button _applyButton, _playButton;
-    private Label _status, _hint, _progress, _nextMove, _speedValue, _scaleValue;
+    private Button _applyButton, _playButton, _editButton, _solveButton;
+    private Label _status, _hint, _progress, _nextMove, _speedValue, _scaleValue, _sizeValue;
     private Slider _speed;
+    private SliderInt _sizeSlider;
     private readonly List<Label> _tokenLabels = new List<Label>();
     private int _tokensVersion = -1;
 
@@ -97,6 +106,7 @@ public class CubeUI : MonoBehaviour
             if (app.view != null) app.view.Repainted -= RefreshNet;
         }
         if (_panelSettings != null) Destroy(_panelSettings);
+        if (_netTexture != null) Destroy(_netTexture);
     }
 
     private void SetScale(float scale, bool save = true)
@@ -169,15 +179,21 @@ public class CubeUI : MonoBehaviour
         }
 
         var settings = BuildSettingsRow();
+        var sizeRow = BuildSizeRow();
         var title = Title(Loc.T("net.title"));
-        var net = BuildNet();
+        // the net is rebuilt in place when the cube size changes (see RefreshNet), not the whole panel,
+        // so dragging the size slider is not interrupted
+        _netHost = new VisualElement();
+        _netHost.Add(BuildNet());
         side.Add(settings);
+        side.Add(sizeRow);
         side.Add(title);
-        side.Add(net);
+        side.Add(_netHost);
         _collapsible.Add(settings);
+        _collapsible.Add(sizeRow);
         _collapsible.Add(title);
-        _collapsible.Add(net);
-        if (!_compact) side.style.width = net.style.width.value.value + 24; // + panel padding
+        _collapsible.Add(_netHost);
+        if (!_compact) side.style.width = NetWidth + 24; // + panel padding
 
         _palette = new VisualElement();
         _palette.style.flexDirection = FlexDirection.Row;
@@ -205,10 +221,12 @@ public class CubeUI : MonoBehaviour
         _status.style.fontSize = 14;
         side.Add(_status);
 
+        _editButton = MakeButton(Loc.T("btn.edit"), app.BeginEdit);
+        _solveButton = MakeButton(Loc.T("btn.solve"), app.Solve);
         _playButtons = ButtonRow(
-            MakeButton(Loc.T("btn.edit"), app.BeginEdit),
+            _editButton,
             MakeButton(Loc.T("btn.scramble"), app.Scramble),
-            MakeButton(Loc.T("btn.solve"), app.Solve),
+            _solveButton,
             MakeButton(Loc.T("btn.reset"), app.ResetCube));
         side.Add(_playButtons);
 
@@ -369,28 +387,55 @@ public class CubeUI : MonoBehaviour
 
     private VisualElement BuildNet()
     {
-        const float faceGap = 4f, cellGap = 2f;
-        float faceSize = cellSize * 3 + cellGap * 2;
+        int n = app.view.size;
+        _netSize = n;
+        _netImage = null;
 
         var net = new VisualElement();
-        net.style.width = faceSize * 4 + faceGap * 3;
-        net.style.height = faceSize * 3 + faceGap * 2;
+        net.style.width = NetWidth;
+        net.style.height = NetFaceSize * 3 + NetFaceGap * 2;
         net.style.marginTop = 6;
 
-        for (int face = 0; face < 6; face++)
-        for (int row = 0; row < 3; row++)
-        for (int col = 0; col < 3; col++)
+        if (n > MaxElementNetSize)
         {
-            int index = face * 9 + row * 3 + col;
+            // one texel per sticker in a 4N x 3N image with the faces laid out as a cross
+            if (_netTexture == null || _netTexture.width != 4 * n)
+            {
+                if (_netTexture != null) Destroy(_netTexture);
+                _netTexture = new Texture2D(4 * n, 3 * n, TextureFormat.RGBA32, mipChain: false)
+                {
+                    filterMode = FilterMode.Point,
+                    wrapMode = TextureWrapMode.Clamp,
+                };
+                _netPixels = new Color32[12 * n * n]; // transparent outside the cross
+            }
+            _netImage = new VisualElement();
+            _netImage.style.width = NetWidth;
+            _netImage.style.height = NetWidth * 0.75f;
+            _netImage.style.backgroundImage = new StyleBackground(Background.FromTexture2D(_netTexture));
+            net.style.height = NetWidth * 0.75f;
+            net.Add(_netImage);
+            _cells = new VisualElement[0];
+            return net;
+        }
+
+        float cellGap = n <= 5 ? 2f : 1f;
+        float cellSize = (NetFaceSize - cellGap * (n - 1)) / n;
+        _cells = new VisualElement[6 * n * n];
+        for (int face = 0; face < 6; face++)
+        for (int row = 0; row < n; row++)
+        for (int col = 0; col < n; col++)
+        {
+            int index = face * n * n + row * n + col;
             var cell = new VisualElement();
             cell.style.position = Position.Absolute;
-            cell.style.left = FaceSlots[face].x * (faceSize + faceGap) + col * (cellSize + cellGap);
-            cell.style.top = FaceSlots[face].y * (faceSize + faceGap) + row * (cellSize + cellGap);
+            cell.style.left = FaceSlots[face].x * (NetFaceSize + NetFaceGap) + col * (cellSize + cellGap);
+            cell.style.top = FaceSlots[face].y * (NetFaceSize + NetFaceGap) + row * (cellSize + cellGap);
             cell.style.width = cellSize;
             cell.style.height = cellSize;
-            SetRadius(cell, 3);
+            SetRadius(cell, n <= 5 ? 3 : 1);
 
-            // press and drag to paint several stickers in a row
+            // press and drag to paint several stickers in a row (only in edit mode, see PaintSticker)
             cell.RegisterCallback<PointerDownEvent>(_ => app.PaintSticker(index));
             cell.RegisterCallback<PointerEnterEvent>(e =>
             {
@@ -401,6 +446,35 @@ public class CubeUI : MonoBehaviour
             net.Add(cell);
         }
         return net;
+    }
+
+    private VisualElement BuildSizeRow()
+    {
+        var row = Row();
+        row.style.marginBottom = 8;
+        row.Add(SmallLabel(Loc.T("settings.size")));
+
+        var smaller = MakeButton("-", () => app.SetSize(app.view.size - 1));
+        smaller.style.marginLeft = 6;
+        smaller.style.marginRight = 0;
+        smaller.style.marginBottom = 0;
+        row.Add(smaller);
+
+        _sizeSlider = new SliderInt(CubeAppController.MinSize, CubeAppController.MaxSize);
+        _sizeSlider.style.flexGrow = 1;
+        _sizeSlider.RegisterValueChangedCallback(e => app.SetSize(e.newValue));
+        row.Add(_sizeSlider);
+
+        var bigger = MakeButton("+", () => app.SetSize(app.view.size + 1));
+        bigger.style.marginRight = 0;
+        bigger.style.marginBottom = 0;
+        row.Add(bigger);
+
+        _sizeValue = SmallLabel("");
+        _sizeValue.style.width = 64;
+        _sizeValue.style.unityTextAlign = TextAnchor.MiddleRight;
+        row.Add(_sizeValue);
+        return row;
     }
 
     private static VisualElement Panel()
@@ -482,8 +556,32 @@ public class CubeUI : MonoBehaviour
     private void RefreshNet()
     {
         if (_root == null) return;
-        for (int i = 0; i < _cells.Length; i++)
-            _cells[i].style.backgroundColor = CubeView.ColorOf(app.view.DisplayedColor(i));
+        if (app.view.size != _netSize)
+        {
+            _netHost.Clear();
+            _netHost.Add(BuildNet());
+        }
+
+        if (_netImage == null)
+        {
+            for (int i = 0; i < _cells.Length; i++)
+                _cells[i].style.backgroundColor = CubeView.ColorOf(app.view.DisplayedColor(i));
+            return;
+        }
+
+        // texture rows go bottom-up, the net is laid out top-down
+        int n = _netSize, width = 4 * n;
+        for (int face = 0; face < 6; face++)
+        for (int row = 0; row < n; row++)
+        for (int col = 0; col < n; col++)
+        {
+            int x = FaceSlots[face].x * n + col;
+            int y = 3 * n - 1 - (FaceSlots[face].y * n + row);
+            _netPixels[y * width + x] = CubeView.ColorOf(app.view.DisplayedColor(face * n * n + row * n + col));
+        }
+        _netTexture.SetPixels32(_netPixels);
+        _netTexture.Apply(false);
+        _netImage.MarkDirtyRepaint();
     }
 
     private void RefreshPanel()
@@ -493,6 +591,12 @@ public class CubeUI : MonoBehaviour
         Show(_editButtons, editing);
         Show(_playButtons, !editing);
         _applyButton.SetEnabled(editing && app.EditValidation.IsValid);
+        // the editor and the solver exist only for the 3x3 so far
+        _editButton.SetEnabled(app.CanSolve);
+        _solveButton.SetEnabled(app.CanSolve);
+        _editButton.tooltip = _solveButton.tooltip = app.CanSolve ? "" : Loc.T("status.only3x3");
+        _sizeSlider.SetValueWithoutNotify(app.view.size);
+        _sizeValue.text = $"{app.view.size}x{app.view.size}";
 
         for (int c = 0; c < 6; c++)
             SetBorder(_swatches[c], c == app.Editor.SelectedColor ? 3 : 0, Color.white);
