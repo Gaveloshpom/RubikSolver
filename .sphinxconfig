@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "enabled": true,
+  "level": "standard",
+  "distance": "mixed",
+  "mode": "block",
+  "events": [
+    "pre-push"
+  ],
+  "branches": [
+    "main",
+    "master",
+    "3x3-Only",
+    "fix/*",
+    "feat/*",
+    "feature/*",
+    "refactor/*",
+    "docs/*",
+    "chore/*",
+    "test/*"
+  ],
+  "remotes": [
+    "*"
+  ],
+  "exclude": [],
+  "backgroundPreparation": true,
+  "github": {
+    "status": true,
+    "comment": false,
+    "answers": false
+  }
+}

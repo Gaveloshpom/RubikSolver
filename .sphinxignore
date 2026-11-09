@@ -1,0 +1,31 @@
+# Files excluded from Sphinx assessments before content is read.
+# Supports *, **, ?, leading /, trailing /, and local ! exceptions.
+# Built-in sensitive files, global ignores, and config exclusions cannot be restored.
+# .env/.env.*, private keys, and common credentials files are always excluded.
+
+# --- Unity: files the editor writes itself (serialized YAML, not hand-written code) ---
+unity/RubikApp/ProjectSettings/
+unity/RubikApp/Packages/packages-lock.json
+**/*.meta
+**/*.unity
+**/*.asset
+**/*.mat
+**/*.inputactions
+unity/RubikApp/.vsconfig
+
+# --- Binary and third-party assets ---
+unity/RubikApp/Assets/Resources/Fonts/
+**/*.ttf
+**/*.otf
+**/*.png
+**/*.jpg
+
+# --- Build output and solver DLLs copied by unity/sync-solver.ps1 (normally git-ignored anyway) ---
+unity/RubikApp/Builds/
+unity/RubikApp/Assets/Plugins/Rubik/
+**/bin/
+**/obj/
+
+# --- Boilerplate with nothing to understand ---
+**/nuget.config
+LICENSE.txt
